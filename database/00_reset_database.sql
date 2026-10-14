@@ -2,7 +2,7 @@
 -- RAG Chatbot - XOA toan bo bang (chi dung khi muon lam lai tu dau)
 -- CANH BAO: xoa sach du lieu trong database rag_chatbot
 -- Chay file nay, sau do chay lai 01_create_tables.sql va 02_seed_data.sql
--- ============================================================================
+-- =============================================================================
 
 BEGIN;
 

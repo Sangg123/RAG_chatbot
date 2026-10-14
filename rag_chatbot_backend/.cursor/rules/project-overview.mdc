@@ -59,7 +59,7 @@ docker-compose.yml      # pgvector DB + app service
 - **Document processing** runs as a FastAPI `BackgroundTasks` coroutine (not Celery). Status transitions: `PENDING → PROCESSING → COMPLETED | FAILED`.
 - **Vector search** uses pgvector's `cosine_distance` with `DocumentChunk.embedding`.
 - **Chat streaming** uses `generate_content_stream` → SSE events (`token`, `done`, `error`).
-- **Citations** are created after streaming completes, linking bot messages to retrieved chunks.
+- **Citations** are created after streaming completes, linking bot messages to retrieved chunks
 
 ## Environment Variables (`.env`)
 

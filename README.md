@@ -176,3 +176,5 @@ Trong psql, vài lệnh hay dùng:
 SELECT * FROM users;         -- xem toàn bộ user
 \x                           -- bật chế độ hiển thị dọc cho dễ đọc
 \q                           -- thoát
+
+<!--  -->

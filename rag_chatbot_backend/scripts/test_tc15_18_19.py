@@ -14,7 +14,7 @@ Script chỉ dùng thư viện chuẩn của Python, không cần cài thêm pac
 TC15: gửi câu hỏi dài N-1, N, N+1 ký tự.
       N được đọc trực tiếp từ OpenAPI schema (MessageCreate.content.maxLength).
 TC18: user thường gọi GET /api/v1/stats -> phải trả 403.
-TC19: user_b đọc messages trong conversation của user_a -> phải trả 403.
+TC19: user_b đọc messages trong conversation của user_a -> phải trả 403
 """
 
 from __future__ import annotations
