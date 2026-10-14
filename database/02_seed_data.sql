@@ -1,4 +1,4 @@
--- =============================================================================
+-- ============================================================================
 -- RAG Chatbot - Du lieu mau (10 ban ghi cho moi bang)
 -- Database dich: rag_chatbot
 -- Chay SAU khi da chay file 01_create_tables.sql

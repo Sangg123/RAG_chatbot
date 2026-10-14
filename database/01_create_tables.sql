@@ -3,7 +3,7 @@
 -- Database dich: rag_chatbot
 -- Cach chay tren pgAdmin: chuot phai database rag_chatbot > Query Tool
 --                        > mo file nay > Execute (F5)
--- =============================================================================
+-- ============================================================================
 
 -- Bat buoc phai co extension pgvector (can quyen superuser, thuong la postgres)
 CREATE EXTENSION IF NOT EXISTS vector;
