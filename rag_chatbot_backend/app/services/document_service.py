@@ -22,6 +22,16 @@ async def create_pending_document(
     if not kb:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge base not found")
 
+    # TC14: Chặn upload file rỗng (0 byte)
+    content = await file.read()
+    if len(content) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File rỗng (0 byte), không thể upload."
+        )
+    # Reset con trỏ file về đầu để shutil.copyfileobj đọc lại được
+    await file.seek(0)
+
     document = Document(
         knowledge_base_id=knowledge_base_id,
         filename=file.filename or "uploaded_file",
