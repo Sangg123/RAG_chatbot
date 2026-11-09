@@ -30,24 +30,40 @@ def _build_auth_response(user: User) -> AuthResponse:
 
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
 async def register(payload: RegisterRequest, db: AsyncSession = Depends(get_db)):
+    # Normalize before checking for duplicates.
+    username = payload.username.strip()
+    email = payload.email.strip().lower()
+
+    # Validate username after removing whitespace.
+    if len(username) < 3:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Username must contain at least 3 characters after trimming whitespace",
+        )
+
     existing = await db.scalar(
-        select(User).where(or_(User.username == payload.username, User.email == payload.email))
+        select(User).where(or_(User.username == username, User.email == email))
     )
+
     if existing:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username or email already exists")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username or email already exists",
+        )
 
     user = User(
-        username=payload.username.strip(),
-        email=payload.email.lower(),
+        username=username,
+        email=email,
         hashed_password=hash_password(payload.password),
         role="user",
         is_active=True,
     )
+
     db.add(user)
     await db.commit()
     await db.refresh(user)
-    return _build_auth_response(user)
 
+    return _build_auth_response(user)
 
 @router.post("/login", response_model=AuthResponse)
 async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
