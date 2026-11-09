@@ -2,6 +2,14 @@
 
 Đây là một ứng dụng chatbot sử dụng công nghệ Retrieval-Augmented Generation (RAG) với kiến trúc Monolyth, áp dụng mô hình MVC, bao gồm backend được xây dựng bằng FastAPI và frontend bằng Next.js.
 
+## Triển khai miễn phí
+
+Hướng dẫn deploy Vercel + Render + Neon + Gemini embedding (không cần chạy Ollama trên cloud):
+
+- Xem [`DEPLOY_FREE.md`](DEPLOY_FREE.md).
+- Local vẫn dùng Ollama mặc định (`EMBEDDING_PROVIDER=ollama`).
+- Trên Render đặt `EMBEDDING_PROVIDER=gemini` và dùng `render.yaml` ở root repo.
+
 ## Cấu Trúc Dự Án
 
 ```
@@ -101,9 +109,19 @@ GEMINI_CHAT_MODEL=gemini-3.5-flash
 GEMINI_TITLE_MODEL=gemini-3.1-flash-lite
 GEMINI_FALLBACK_MODELS=gemini-3.1-flash-lite
 
-# Ollama
+# Embeddings
+# Local: ollama. Free cloud: gemini (no Ollama container needed).
+EMBEDDING_PROVIDER=ollama
 OLLAMA_BASE_URL=http://ollama:11434
 OLLAMA_EMBED_MODEL=embeddinggemma
+GEMINI_EMBED_MODEL=gemini-embedding-001
+GEMINI_EMBED_DIM=1536
+GEMINI_EMBED_BATCH_SIZE=50
+
+# Upload / registration
+# Render free: MAX_UPLOAD_MB=20, ALLOW_PUBLIC_REGISTRATION=false
+MAX_UPLOAD_MB=20
+ALLOW_PUBLIC_REGISTRATION=true
 
 # Admin Seed
 ADMIN_SEED_USER_ID=00000000-0000-0000-0000-000000000001

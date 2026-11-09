@@ -78,6 +78,14 @@ services:
             GEMINI_CHAT_MODEL: ${GEMINI_CHAT_MODEL:-gemini-3.5-flash}
             GEMINI_TITLE_MODEL: ${GEMINI_TITLE_MODEL:-gemini-3.1-flash-lite}
             GEMINI_FALLBACK_MODELS: ${GEMINI_FALLBACK_MODELS:-gemini-3.1-flash-lite}
+            EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-ollama}
+            GEMINI_EMBED_MODEL: ${GEMINI_EMBED_MODEL:-gemini-embedding-001}
+            GEMINI_EMBED_DIM: ${GEMINI_EMBED_DIM:-1536}
+            GEMINI_EMBED_BATCH_SIZE: ${GEMINI_EMBED_BATCH_SIZE:-50}
+            GEMINI_EMBED_MAX_RETRIES: ${GEMINI_EMBED_MAX_RETRIES:-3}
+            SEMANTIC_CHUNKING_ENABLED: ${SEMANTIC_CHUNKING_ENABLED:-true}
+            MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-0}
+            ALLOW_PUBLIC_REGISTRATION: ${ALLOW_PUBLIC_REGISTRATION:-true}
             OLLAMA_BASE_URL: http://ollama:11434
             OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-embeddinggemma}
             STORAGE_DIR: /app/storage/uploads

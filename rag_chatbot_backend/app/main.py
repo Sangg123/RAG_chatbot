@@ -21,7 +21,10 @@ app.include_router(api_router, prefix=settings.api_v1_prefix)
 
 @app.get("/health")
 async def health_check():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "embedding_provider": settings.embedding_provider,
+    }
 
 
 if __name__ == "__main__":

@@ -22,6 +22,36 @@ async def create_pending_document(
     if not kb:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge base not found")
 
+    # TC14: Chặn upload file rỗng (0 byte)
+    max_bytes = (
+        settings.max_upload_mb * 1024 * 1024
+        if settings.max_upload_mb is not None and settings.max_upload_mb > 0
+        else None
+    )
+    declared_size = getattr(file, "size", None)
+    if max_bytes is not None and declared_size is not None and declared_size > max_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail=f"File vượt quá giới hạn {settings.max_upload_mb} MB.",
+        )
+
+    # Read at most max_bytes + 1 so a huge upload cannot exhaust RAM before
+    # the size check (Render free has only 512 MB). Without MAX_UPLOAD_MB,
+    # keep the old local behavior and read the whole file.
+    content = await file.read(max_bytes + 1 if max_bytes is not None else -1)
+    if len(content) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File rỗng (0 byte), không thể upload."
+        )
+    if max_bytes is not None and len(content) > max_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail=f"File vượt quá giới hạn {settings.max_upload_mb} MB.",
+        )
+    # Reset con trỏ file về đầu để shutil.copyfileobj đọc lại được
+    await file.seek(0)
+
     document = Document(
         knowledge_base_id=knowledge_base_id,
         filename=file.filename or "uploaded_file",

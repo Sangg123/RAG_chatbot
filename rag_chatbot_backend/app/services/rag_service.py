@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from pathlib import Path
 from typing import Sequence
 
 import httpx
 from markitdown import MarkItDown
 from google import genai
-from google.genai.types import GenerateContentConfig
+from google.genai.types import EmbedContentConfig, GenerateContentConfig
 from langchain_core.embeddings import Embeddings
 from langchain_experimental.text_splitter import SemanticChunker
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -93,9 +94,14 @@ def _merge_tiny_chunks(chunks: Sequence[str], min_sentences: int) -> list[str]:
     return merged
 
 
-class GeminiLangChainEmbeddings(Embeddings):
+class AppLangChainEmbeddings(Embeddings):
+    """LangChain adapter that follows EMBEDDING_PROVIDER (ollama or gemini)."""
+
+    def __init__(self, task_type: str = "RETRIEVAL_DOCUMENT") -> None:
+        self._task_type = task_type
+
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        return embed_texts(texts)
+        return embed_texts(texts, task_type=self._task_type)
 
     def embed_query(self, text: str) -> list[float]:
         return embed_query(text)
@@ -116,7 +122,7 @@ def split_text(text: str) -> list[str]:
 
     try:
         semantic_splitter = SemanticChunker(
-            embeddings=GeminiLangChainEmbeddings(),
+            embeddings=AppLangChainEmbeddings(task_type="SEMANTIC_SIMILARITY"),
             sentence_split_regex=r"(?<=[.!?])\s+",
             breakpoint_threshold_type="percentile",
             breakpoint_threshold_amount=percentile,
@@ -202,9 +208,81 @@ def _ollama_embed_batch(texts: list[str]) -> list[list[float]]:
     return results
 
 
-def embed_texts(texts: Sequence[str]) -> list[list[float]]:
-    all_embeddings: list[list[float]] = []
+_GEMINI_EMBED_RETRYABLE_CODES = {429, 500, 502, 503, 504}
+
+
+def _is_retryable_gemini_error(exc: Exception) -> bool:
+    code = getattr(exc, "code", None)
+    if isinstance(code, int) and code in _GEMINI_EMBED_RETRYABLE_CODES:
+        return True
+    return isinstance(
+        exc,
+        (httpx.TimeoutException, httpx.ConnectError, TimeoutError, ConnectionError),
+    )
+
+
+def _gemini_embed_batch(texts: list[str], task_type: str) -> list[list[float]]:
+    """Embed a batch with Gemini, retrying transient errors (429/5xx)."""
+    config = EmbedContentConfig(
+        task_type=task_type,
+        output_dimensionality=settings.gemini_embed_dim,
+    )
+    max_retries = max(1, settings.gemini_embed_max_retries)
+    last_exc: Exception | None = None
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = _genai_client.models.embed_content(
+                model=settings.gemini_embed_model,
+                contents=texts,
+                config=config,
+            )
+            embeddings = [
+                list(embedding.values or [])
+                for embedding in (response.embeddings or [])
+            ]
+            if len(embeddings) != len(texts):
+                raise RuntimeError(
+                    "Gemini embedding returned "
+                    f"{len(embeddings)} vectors for {len(texts)} texts"
+                )
+            return embeddings
+        except Exception as exc:
+            last_exc = exc
+            if attempt >= max_retries or not _is_retryable_gemini_error(exc):
+                raise
+            wait = 2 ** attempt
+            logger.warning(
+                "Gemini embedding attempt %d/%d failed (%s), retrying in %ds…",
+                attempt,
+                max_retries,
+                exc,
+                wait,
+            )
+            time.sleep(wait)
+
+    raise RuntimeError(
+        f"Gemini embedding failed after {max_retries} attempts"
+    ) from last_exc
+
+
+def embed_texts(
+    texts: Sequence[str],
+    task_type: str = "RETRIEVAL_DOCUMENT",
+) -> list[list[float]]:
     texts_list = list(texts)
+    if not texts_list:
+        return []
+
+    if settings.embedding_provider == "gemini":
+        batch_size = max(1, min(settings.gemini_embed_batch_size, _EMBED_BATCH_LIMIT))
+        all_embeddings: list[list[float]] = []
+        for i in range(0, len(texts_list), batch_size):
+            batch = texts_list[i : i + batch_size]
+            all_embeddings.extend(_gemini_embed_batch(batch, task_type))
+        return all_embeddings
+
+    all_embeddings = []
     for i in range(0, len(texts_list), _EMBED_BATCH_LIMIT):
         batch = texts_list[i : i + _EMBED_BATCH_LIMIT]
         all_embeddings.extend(_ollama_embed_batch(batch))
@@ -212,6 +290,8 @@ def embed_texts(texts: Sequence[str]) -> list[list[float]]:
 
 
 def embed_query(query: str) -> list[float]:
+    if settings.embedding_provider == "gemini":
+        return _gemini_embed_batch([query], "RETRIEVAL_QUERY")[0]
     return _ollama_embed_batch([query])[0]
 
 

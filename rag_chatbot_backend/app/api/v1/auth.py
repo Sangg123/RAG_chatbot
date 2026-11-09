@@ -5,6 +5,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import create_access_token, create_refresh_token, decode_token, hash_password, verify_password
+from app.config import get_settings
 from app.dependencies import get_current_user, get_db
 from app.models import User
 from app.schemas.user import (
@@ -17,6 +18,7 @@ from app.schemas.user import (
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+settings = get_settings()
 
 
 def _build_auth_response(user: User) -> AuthResponse:
@@ -30,6 +32,12 @@ def _build_auth_response(user: User) -> AuthResponse:
 
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
 async def register(payload: RegisterRequest, db: AsyncSession = Depends(get_db)):
+    if not settings.allow_public_registration:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Public registration is disabled",
+        )
+
     existing = await db.scalar(
         select(User).where(or_(User.username == payload.username, User.email == payload.email))
     )
