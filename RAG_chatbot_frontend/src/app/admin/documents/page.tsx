@@ -172,9 +172,16 @@ function DocumentsPageContent() {
                         const input = document.createElement("input");
                         input.type = "file";
                         input.onchange = async (e) => {
-                            const file = (e.target as HTMLInputElement)
-                                .files?.[0];
+                            const file = (e.target as HTMLInputElement).files?.[0];
+
                             if (!file || !selectedKb) return;
+
+                            // TC14: Không cho phép upload file rỗng (0 byte)
+                            if (file.size === 0) {
+                                window.alert("File rỗng (0 byte), không thể tải lên!");
+                                return;
+                            }
+
                             setIsUploading(true);
                             try {
                                 const doc = await uploadDocument(
