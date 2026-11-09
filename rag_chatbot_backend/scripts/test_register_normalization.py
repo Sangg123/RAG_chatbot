@@ -95,7 +95,29 @@ class TestRegisterNormalization(unittest.IsolatedAsyncioTestCase):
         # Không tạo tài khoản khi phát hiện trùng
         db.add.assert_not_called()
         db.commit.assert_not_awaited()
+    async def test_reject_short_username_after_trimming(self):
+        """Từ chối username quá ngắn sau khi loại bỏ khoảng trắng."""
+
+        db = self.create_mock_db()
+
+        payload = RegisterRequest(
+            username="  ab  ",
+            email="shortusername@example.com",
+            password="TestPassword123!"
+        )
+
+        with self.assertRaises(HTTPException) as context:
+            await auth_api.register(payload, db)
+
+        self.assertEqual(context.exception.status_code, 422)
+
+        db.scalar.assert_not_awaited()
+        db.add.assert_not_called()
+        db.commit.assert_not_awaited()
+
+
 
 
 if __name__ == "__main__":
+
     unittest.main()
