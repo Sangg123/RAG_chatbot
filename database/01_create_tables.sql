@@ -139,7 +139,91 @@ CREATE INDEX IF NOT EXISTS ix_message_citations_chunk_id
     ON message_citations (chunk_id);
 
 -- ---------------------------------------------------------------------------
--- 8. alembic_version
+-- 8. orders
+--    Du lieu don hang co cau truc de AI tra cuu qua function calling.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS orders (
+    id                 UUID          PRIMARY KEY,
+    user_id            UUID          NOT NULL,
+    order_code         VARCHAR(32)   NOT NULL,
+    customer_name      VARCHAR(255)  NOT NULL,
+    customer_phone     VARCHAR(32)   NOT NULL,
+    shipping_address   TEXT          NOT NULL,
+    status             VARCHAR(32)   NOT NULL,
+    payment_method     VARCHAR(32),
+    payment_status     VARCHAR(32),
+    subtotal           NUMERIC(12,2) NOT NULL DEFAULT 0,
+    shipping_fee       NUMERIC(12,2) NOT NULL DEFAULT 0,
+    total_amount       NUMERIC(12,2) NOT NULL DEFAULT 0,
+    carrier            VARCHAR(100),
+    tracking_code      VARCHAR(100),
+    ordered_at         TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    estimated_delivery TIMESTAMPTZ,
+    delivered_at       TIMESTAMPTZ,
+    note               TEXT,
+    created_at         TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    updated_at         TIMESTAMPTZ,
+    CONSTRAINT fk_orders_user_id_users
+        FOREIGN KEY (user_id)
+        REFERENCES users (id)
+        ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ix_orders_order_code
+    ON orders (order_code);
+CREATE INDEX IF NOT EXISTS ix_orders_customer_phone
+    ON orders (customer_phone);
+CREATE INDEX IF NOT EXISTS ix_orders_status
+    ON orders (status);
+CREATE INDEX IF NOT EXISTS ix_orders_user_id
+    ON orders (user_id);
+
+-- ---------------------------------------------------------------------------
+-- 9. order_items
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS order_items (
+    id           UUID          PRIMARY KEY,
+    order_id     UUID          NOT NULL,
+    product_name VARCHAR(255)  NOT NULL,
+    quantity     INTEGER       NOT NULL DEFAULT 1,
+    unit_price   NUMERIC(12,2) NOT NULL DEFAULT 0,
+    created_at   TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    CONSTRAINT fk_order_items_order
+        FOREIGN KEY (order_id)
+        REFERENCES orders (id)
+        ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS ix_order_items_order_id
+    ON order_items (order_id);
+
+-- ---------------------------------------------------------------------------
+-- 10. message_tool_calls
+--     Audit log moi lan AI goi tool (arguments/result JSONB).
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS message_tool_calls (
+    id            UUID         PRIMARY KEY,
+    message_id    UUID         NOT NULL,
+    tool_name     VARCHAR(64)  NOT NULL,
+    arguments     JSONB,
+    result        JSONB,
+    status        VARCHAR(20)  NOT NULL DEFAULT 'success',
+    error_message TEXT,
+    duration_ms   INTEGER,
+    created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    CONSTRAINT fk_message_tool_calls_message
+        FOREIGN KEY (message_id)
+        REFERENCES messages (id)
+        ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS ix_message_tool_calls_message_id
+    ON message_tool_calls (message_id);
+CREATE INDEX IF NOT EXISTS ix_message_tool_calls_tool_name
+    ON message_tool_calls (tool_name);
+
+-- ---------------------------------------------------------------------------
+-- 11. alembic_version
 --    Danh dau migration moi nhat de backend co the chay
 --    "alembic upgrade head" ma khong bi loi "table already exists".
 -- ---------------------------------------------------------------------------
@@ -149,7 +233,7 @@ CREATE TABLE IF NOT EXISTS alembic_version (
 );
 
 INSERT INTO alembic_version (version_num)
-VALUES ('20260411_000004')
+VALUES ('20261117_000006')
 ON CONFLICT (version_num) DO NOTHING;
 
 COMMIT;

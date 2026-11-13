@@ -61,6 +61,8 @@ class Settings(BaseSettings):
     semantic_similarity_threshold: float = 0.22
     semantic_min_sentences_per_chunk: int = 2
     top_k_chunks: int = 5
+    # Số tin nhắn gần nhất gửi kèm khi chạy tool-calling agent.
+    chat_history_max_messages: int = 8
 
     storage_dir: str = "storage/uploads"
     # None/0 keeps the previous local behavior (no application-level limit).

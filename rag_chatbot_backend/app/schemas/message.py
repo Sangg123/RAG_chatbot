@@ -33,6 +33,20 @@ class MessageCitationResponse(BaseModel):
     document_name: str | None = None
 
 
+class MessageToolCallResponse(BaseModel):
+    id: UUID
+    message_id: UUID
+    tool_name: str
+    arguments: dict | None = None
+    result: dict | None = None
+    status: str
+    error_message: str | None = None
+    duration_ms: int | None = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class MessageFeedbackUpdate(BaseModel):
     rating: int | None = None
     feedback_text: str | None = None

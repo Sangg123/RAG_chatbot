@@ -113,6 +113,19 @@ SELECT extversion FROM pg_extension WHERE extname = 'vector';
 
 Migration `20260407_000001_initial.py` đã có `CREATE EXTENSION IF NOT EXISTS vector`, nên Neon sẽ tự bật pgvector.
 
+> Migration `20261117_000005_add_orders_and_tool_calls.py` tạo các bảng
+> `orders`, `order_items`, `message_tool_calls` và seed sẵn 6 đơn hàng mẫu
+> (`DH123`, `DH124`, `DH125`, `DH126`, `DH127`, `DH1001`) để test AI tool calling.
+>
+> Migration `20261117_000006_add_order_ownership.py` thêm `orders.user_id` để
+> mỗi đơn chỉ được tra cứu bởi tài khoản sở hữu. Migration cũng tạo 6 tài khoản
+> demo (mật khẩu `password123`) gắn với 6 đơn mẫu. Chatbot từ chối và không lộ
+> dữ liệu khi người đang đăng nhập hỏi mã đơn/SĐT của người khác.
+>
+> **Lưu ý bảo mật:** các tài khoản demo có mật khẩu công khai, chỉ dùng cho
+> demo/đồ án. Trước khi triển khai thật phải xóa hoặc vô hiệu hóa chúng và đổi
+> mật khẩu admin.
+
 > Migration `20260411_000003_add_users_auth.py` tạo sẵn admin:
 >
 > - username: `admin`

@@ -9,7 +9,7 @@ from typing import Sequence
 import httpx
 from markitdown import MarkItDown
 from google import genai
-from google.genai.types import EmbedContentConfig, GenerateContentConfig
+from google.genai.types import Content, EmbedContentConfig, GenerateContentConfig
 from langchain_core.embeddings import Embeddings
 from langchain_experimental.text_splitter import SemanticChunker
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -346,16 +346,51 @@ def _should_try_fallback(exc: Exception) -> bool:
     return True
 
 
-async def stream_chat_answer(prompt: str):
+async def generate_chat_response(
+    contents: str | list[Content],
+    config: GenerateContentConfig | None = None,
+):
+    """Generate a full (non-streaming) Gemini response with model fallback."""
     last_error: Exception | None = None
+    effective_config = config or GenerateContentConfig(temperature=0)
+
+    for model in _chat_model_candidates():
+        try:
+            return await _genai_client.aio.models.generate_content(
+                model=model,
+                contents=contents,
+                config=effective_config,
+            )
+        except Exception as exc:
+            last_error = exc
+            if not _should_try_fallback(exc):
+                raise
+            logger.warning(
+                "Gemini model %s is unavailable (%s); trying next fallback",
+                model,
+                exc,
+            )
+
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("No Gemini model candidates configured")
+
+
+async def stream_chat_contents(
+    contents: str | list[Content],
+    config: GenerateContentConfig | None = None,
+):
+    """Stream Gemini text for arbitrary contents/config, with model fallback."""
+    last_error: Exception | None = None
+    effective_config = config or GenerateContentConfig(temperature=0)
 
     for model in _chat_model_candidates():
         emitted = False
         try:
             async for chunk in await _genai_client.aio.models.generate_content_stream(
                 model=model,
-                contents=prompt,
-                config=GenerateContentConfig(temperature=0),
+                contents=contents,
+                config=effective_config,
             ):
                 token = chunk.text or ""
                 if token:
@@ -374,6 +409,11 @@ async def stream_chat_answer(prompt: str):
 
     if last_error is not None:
         raise last_error
+
+
+async def stream_chat_answer(prompt: str):
+    async for token in stream_chat_contents(prompt):
+        yield token
 
 
 def generate_conversation_title(first_user_message: str) -> str:

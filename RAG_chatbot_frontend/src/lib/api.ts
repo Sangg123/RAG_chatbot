@@ -95,6 +95,35 @@ export interface Citation {
   document_name: string | null;
 }
 
+export interface ToolCall {
+  id: string;
+  message_id?: string;
+  tool_name: string;
+  arguments: Record<string, unknown> | null;
+  result: Record<string, unknown> | null;
+  status: string;
+  error_message?: string | null;
+  duration_ms?: number | null;
+  created_at?: string;
+}
+
+export interface ToolCallEvent {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+  label: string;
+  status: string;
+}
+
+export interface ToolResultEvent {
+  id: string;
+  name: string;
+  status: "success" | "error";
+  result?: Record<string, unknown> | null;
+  error?: string | null;
+  duration_ms: number;
+}
+
 export interface Stats {
   total_users: number;
   total_knowledge_bases: number;
@@ -186,6 +215,10 @@ export function getCitations(messageId: string) {
   return apiFetch<Citation[]>(`/messages/${messageId}/citations`);
 }
 
+export function getToolCalls(messageId: string) {
+  return apiFetch<ToolCall[]>(`/messages/${messageId}/tool-calls`);
+}
+
 export function submitFeedback(messageId: string, data: { rating?: number; feedback_text?: string }) {
   return apiFetch<{ ok: boolean }>(`/messages/${messageId}/feedback`, {
     method: "PATCH",
@@ -196,6 +229,8 @@ export function submitFeedback(messageId: string, data: { rating?: number; feedb
 export interface StreamCallbacks {
   onToken: (token: string) => void;
   onDone: () => void;
+  onToolCall?: (toolCall: ToolCallEvent) => void;
+  onToolResult?: (toolResult: ToolResultEvent) => void;
   onError?: (error: string) => void;
 }
 
@@ -258,6 +293,22 @@ export async function sendMessageSSE(
     if (eventName === "error") {
       finished = true;
       callbacks.onError?.(data);
+      return;
+    }
+    if (eventName === "tool_call") {
+      try {
+        callbacks.onToolCall?.(JSON.parse(data) as ToolCallEvent);
+      } catch {
+        // Ignore malformed tool events; the final message still renders.
+      }
+      return;
+    }
+    if (eventName === "tool_result") {
+      try {
+        callbacks.onToolResult?.(JSON.parse(data) as ToolResultEvent);
+      } catch {
+        // Ignore malformed tool events; the final message still renders.
+      }
       return;
     }
     if (data) {

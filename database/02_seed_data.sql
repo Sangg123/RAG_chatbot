@@ -15,7 +15,7 @@
 BEGIN;
 
 -- ---------------------------------------------------------------------------
--- 1. users (10 ban ghi)
+-- 1. users (13 ban ghi)
 -- ---------------------------------------------------------------------------
 INSERT INTO users (id, username, email, hashed_password, role, is_active, token_version, created_at) VALUES
 ('00000000-0000-0000-0000-000000000001', 'admin',         'admin@company.com',     '$2b$12$Ig4luvJDVurqGe55yBz62.mpaEWuKYCH1VxeiHtQB3qJ6G8Da9BCC', 'admin', TRUE, 0, '2026-01-02 08:00:00+07'),
@@ -27,7 +27,10 @@ INSERT INTO users (id, username, email, hashed_password, role, is_active, token_
 ('11111111-1111-1111-1111-111111111006', 'vo.quoc.huy',   'huy.vo@company.com',   '$2b$12$029RT/kJDFB7YC8MhdKogelrma4lDmICJOm3kLI1i4yAvLbbVHtQ2', 'user',  TRUE, 0, '2026-01-22 15:10:00+07'),
 ('11111111-1111-1111-1111-111111111007', 'dang.thi.lan',  'lan.dang@company.com', '$2b$12$029RT/kJDFB7YC8MhdKogelrma4lDmICJOm3kLI1i4yAvLbbVHtQ2', 'user',  TRUE, 0, '2026-01-25 09:00:00+07'),
 ('11111111-1111-1111-1111-111111111008', 'bui.anh.minh',  'minh.bui@company.com', '$2b$12$029RT/kJDFB7YC8MhdKogelrma4lDmICJOm3kLI1i4yAvLbbVHtQ2', 'user',  TRUE, 0, '2026-01-28 13:40:00+07'),
-('11111111-1111-1111-1111-111111111009', 'do.thanh.nam',  'nam.do@company.com',   '$2b$12$029RT/kJDFB7YC8MhdKogelrma4lDmICJOm3kLI1i4yAvLbbVHtQ2', 'user',  FALSE, 0, '2026-02-01 16:25:00+07')
+('11111111-1111-1111-1111-111111111009', 'do.thanh.nam',  'nam.do@company.com',   '$2b$12$029RT/kJDFB7YC8MhdKogelrma4lDmICJOm3kLI1i4yAvLbbVHtQ2', 'user',  FALSE, 0, '2026-02-01 16:25:00+07'),
+('11111111-1111-1111-1111-111111111010', 'pham.thu.dung', 'dung.pham@company.com', '$2b$12$029RT/kJDFB7YC8MhdKogelrma4lDmICJOm3kLI1i4yAvLbbVHtQ2', 'user',  TRUE,  0, '2026-02-02 08:00:00+07'),
+('11111111-1111-1111-1111-111111111011', 'hoang.van.em',  'em.hoang@company.com',  '$2b$12$029RT/kJDFB7YC8MhdKogelrma4lDmICJOm3kLI1i4yAvLbbVHtQ2', 'user',  TRUE,  0, '2026-02-02 09:00:00+07'),
+('11111111-1111-1111-1111-111111111012', 'vu.thi.lan',    'lan.vu@company.com',    '$2b$12$029RT/kJDFB7YC8MhdKogelrma4lDmICJOm3kLI1i4yAvLbbVHtQ2', 'user',  TRUE,  0, '2026-02-02 10:00:00+07')
 ON CONFLICT (id) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
@@ -148,6 +151,133 @@ INSERT INTO message_citations (id, message_id, chunk_id, relevance_score) VALUES
 ('ffffffff-ffff-ffff-ffff-fffffffff010', 'eeeeeeee-eeee-eeee-eeee-eeeeeeeee010', 'cccccccc-cccc-cccc-cccc-ccccccccc008', 0.66)
 ON CONFLICT (id) DO NOTHING;
 
+-- ---------------------------------------------------------------------------
+-- 8. orders (6 don hang mau de test function calling)
+-- ---------------------------------------------------------------------------
+INSERT INTO orders (
+    id, user_id, order_code, customer_name, customer_phone, shipping_address,
+    status, payment_method, payment_status, subtotal, shipping_fee,
+    total_amount, carrier, tracking_code, ordered_at, estimated_delivery,
+    delivered_at, note, created_at, updated_at
+)
+VALUES
+    (
+        '11111111-1111-4111-8111-111111111111',
+        '11111111-1111-1111-1111-111111111001', 'DH123',
+        'Nguyễn Văn An', '0901234567',
+        '123 Nguyễn Trãi, Quận 1, TP. Hồ Chí Minh',
+        'SHIPPING', 'COD', 'UNPAID', 857000, 30000, 887000,
+        'GHN', 'GHN123456789',
+        now() - interval '2 days', now() + interval '1 day', NULL,
+        'Giao trong giờ hành chính', now(), now()
+    ),
+    (
+        '11111111-1111-4111-8111-111111111112',
+        '11111111-1111-1111-1111-111111111002', 'DH124',
+        'Trần Thị Bình', '0912345678',
+        '45 Lê Lợi, Hải Châu, Đà Nẵng',
+        'DELIVERED', 'COD', 'PAID', 529000, 0, 529000,
+        'Viettel Post', 'VTP987654321',
+        now() - interval '5 days', now() - interval '2 days',
+        now() - interval '1 day', NULL, now(), now()
+    ),
+    (
+        '11111111-1111-4111-8111-111111111113',
+        '11111111-1111-1111-1111-111111111003', 'DH125',
+        'Lê Minh Cường', '0987654321',
+        '78 Trần Duy Hưng, Cầu Giấy, Hà Nội',
+        'PENDING', 'BANK_TRANSFER', 'UNPAID', 1298000, 0, 1298000,
+        NULL, NULL, now() - interval '2 hours',
+        now() + interval '3 days', NULL, NULL, now(), now()
+    ),
+    (
+        '11111111-1111-4111-8111-111111111114',
+        '11111111-1111-1111-1111-111111111010', 'DH126',
+        'Phạm Thu Dung', '0909876543',
+        '12 Phan Đình Phùng, Ba Đình, Hà Nội',
+        'CANCELLED', 'COD', 'UNPAID', 249000, 30000, 279000,
+        NULL, NULL, now() - interval '3 days', NULL, NULL,
+        'Khách hủy do đổi ý', now(), now()
+    ),
+    (
+        '11111111-1111-4111-8111-111111111115',
+        '11111111-1111-1111-1111-111111111011', 'DH127',
+        'Hoàng Văn Em', '0934567890',
+        '99 Võ Văn Ngân, Thủ Đức, TP. Hồ Chí Minh',
+        'CONFIRMED', 'COD', 'UNPAID', 459000, 30000, 489000,
+        'GHTK', 'GHTK456789123',
+        now() - interval '1 day', now() + interval '2 days', NULL,
+        NULL, now(), now()
+    ),
+    (
+        '11111111-1111-4111-8111-111111111116',
+        '11111111-1111-1111-1111-111111111012', 'DH1001',
+        'Vũ Thị Lan', '0945678901',
+        '56 Hùng Vương, Ninh Kiều, Cần Thơ',
+        'SHIPPING', 'BANK_TRANSFER', 'PAID', 678000, 25000, 703000,
+        'Viettel Post', 'VTP112233445',
+        now() - interval '1 day', now() + interval '1 day', NULL,
+        NULL, now(), now()
+    )
+ON CONFLICT (order_code) DO UPDATE SET user_id = EXCLUDED.user_id;
+
+-- ---------------------------------------------------------------------------
+-- 9. order_items (9 dong san pham mau)
+-- ---------------------------------------------------------------------------
+INSERT INTO order_items (id, order_id, product_name, quantity, unit_price)
+SELECT '22222222-2222-4222-8222-222222220001',
+       o.id, 'Áo thun cotton', 2, 199000
+FROM orders o WHERE o.order_code = 'DH123'
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO order_items (id, order_id, product_name, quantity, unit_price)
+SELECT '22222222-2222-4222-8222-222222220002',
+       o.id, 'Quần jean slim', 1, 459000
+FROM orders o WHERE o.order_code = 'DH123'
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO order_items (id, order_id, product_name, quantity, unit_price)
+SELECT '22222222-2222-4222-8222-222222220003',
+       o.id, 'Tai nghe Bluetooth', 1, 529000
+FROM orders o WHERE o.order_code = 'DH124'
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO order_items (id, order_id, product_name, quantity, unit_price)
+SELECT '22222222-2222-4222-8222-222222220004',
+       o.id, 'Bàn phím cơ', 1, 899000
+FROM orders o WHERE o.order_code = 'DH125'
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO order_items (id, order_id, product_name, quantity, unit_price)
+SELECT '22222222-2222-4222-8222-222222220005',
+       o.id, 'Chuột không dây', 1, 399000
+FROM orders o WHERE o.order_code = 'DH125'
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO order_items (id, order_id, product_name, quantity, unit_price)
+SELECT '22222222-2222-4222-8222-222222220006',
+       o.id, 'Áo khoác gió', 1, 249000
+FROM orders o WHERE o.order_code = 'DH126'
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO order_items (id, order_id, product_name, quantity, unit_price)
+SELECT '22222222-2222-4222-8222-222222220007',
+       o.id, 'Giày sneaker', 1, 459000
+FROM orders o WHERE o.order_code = 'DH127'
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO order_items (id, order_id, product_name, quantity, unit_price)
+SELECT '22222222-2222-4222-8222-222222220008',
+       o.id, 'Balo laptop', 1, 399000
+FROM orders o WHERE o.order_code = 'DH1001'
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO order_items (id, order_id, product_name, quantity, unit_price)
+SELECT '22222222-2222-4222-8222-222222220009',
+       o.id, 'Ví da', 1, 279000
+FROM orders o WHERE o.order_code = 'DH1001'
+ON CONFLICT (id) DO NOTHING;
+
 COMMIT;
 
 -- ---------------------------------------------------------------------------
@@ -160,4 +290,7 @@ UNION ALL SELECT 'document_chunks',    COUNT(*) FROM document_chunks
 UNION ALL SELECT 'conversations',      COUNT(*) FROM conversations
 UNION ALL SELECT 'messages',           COUNT(*) FROM messages
 UNION ALL SELECT 'message_citations',  COUNT(*) FROM message_citations
+UNION ALL SELECT 'orders',             COUNT(*) FROM orders
+UNION ALL SELECT 'order_items',        COUNT(*) FROM order_items
+UNION ALL SELECT 'message_tool_calls', COUNT(*) FROM message_tool_calls
 ORDER BY table_name;

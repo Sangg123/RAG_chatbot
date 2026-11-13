@@ -20,6 +20,7 @@ import {
     Trash2,
     Sparkles,
     ShieldCheck,
+    Wrench,
 } from "lucide-react";
 import {
     listConversations,
@@ -27,11 +28,15 @@ import {
     deleteConversation,
     listMessages,
     getCitations,
+    getToolCalls,
     submitFeedback,
     sendMessageSSE,
     type Conversation as ApiConversation,
     type Message as ApiMessage,
     type Citation as ApiCitation,
+    type ToolCall as ApiToolCall,
+    type ToolCallEvent,
+    type ToolResultEvent,
 } from "@/lib/api";
 import { formatRelativeTime, cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -54,7 +59,26 @@ import { useAuth } from "@/lib/use-auth";
 type Message = Omit<ApiMessage, "sender_type"> & {
     sender_type: "user" | "bot";
     citations?: ApiCitation[];
+    toolCalls?: ApiToolCall[];
 };
+
+function toolCallLabel(toolCall: ApiToolCall) {
+    const args = toolCall.arguments ?? {};
+    if (toolCall.tool_name === "lookup_order") {
+        return `Đơn hàng ${String(args.order_code ?? "")}`.trim();
+    }
+    if (toolCall.tool_name === "list_orders_by_phone") {
+        return `SĐT ${String(args.phone ?? "")}`.trim();
+    }
+    return toolCall.tool_name;
+}
+
+function toolCallStatus(toolCall: ApiToolCall) {
+    if (toolCall.status === "running") return "Đang tra cứu";
+    if (toolCall.status === "error" || toolCall.error_message) return "Tra cứu lỗi";
+    if (toolCall.result?.found === false) return "Không tìm thấy";
+    return "Đã tra cứu";
+}
 
 function formatContent(content: string) {
     return content
@@ -110,6 +134,7 @@ export default function ChatPage() {
     const [isTyping, setIsTyping] = useState(false);
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [citationOpen, setCitationOpen] = useState<string | null>(null);
+    const [toolCallOpen, setToolCallOpen] = useState<string | null>(null);
     const [ratings, setRatings] = useState<Record<string, number>>({});
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const router = useRouter();
@@ -191,16 +216,24 @@ export default function ChatPage() {
     useEffect(() => {
         if (!activeConvId) return;
         listMessages(activeConvId).then(async (msgs) => {
-            const messagesWithCitations = await Promise.all(
+            const messagesWithSources = await Promise.all(
                 msgs.map(async (m) => {
                     if (m.sender_type === "BOT") {
-                        const citations = await getCitations(m.id);
+                        const [citations, toolCalls] = await Promise.all([
+                            getCitations(m.id).catch(
+                                () => [] as ApiCitation[],
+                            ),
+                            getToolCalls(m.id).catch(
+                                () => [] as ApiToolCall[],
+                            ),
+                        ]);
                         return {
                             ...m,
                             sender_type: m.sender_type.toLowerCase() as
                                 | "user"
                                 | "bot",
                             citations,
+                            toolCalls,
                         };
                     }
                     return {
@@ -209,10 +242,11 @@ export default function ChatPage() {
                             | "user"
                             | "bot",
                         citations: [] as ApiCitation[],
+                        toolCalls: [] as ApiToolCall[],
                     };
                 }),
             );
-            setMessages(messagesWithCitations);
+            setMessages(messagesWithSources);
         });
     }, [activeConvId]);
 
@@ -262,15 +296,80 @@ export default function ChatPage() {
                                 ),
                             );
                         },
+                        onToolCall: (toolCall: ToolCallEvent) => {
+                            setMessages((prev) =>
+                                prev.map((m) =>
+                                    m.id === botMsgId
+                                        ? {
+                                              ...m,
+                                              toolCalls: [
+                                                  ...(m.toolCalls ?? []).filter(
+                                                      (tc) =>
+                                                          tc.id !== toolCall.id,
+                                                  ),
+                                                  {
+                                                      id: toolCall.id,
+                                                      tool_name: toolCall.name,
+                                                      arguments:
+                                                          toolCall.arguments,
+                                                      result: null,
+                                                      status: "running",
+                                                  },
+                                              ],
+                                          }
+                                        : m,
+                                ),
+                            );
+                        },
+                        onToolResult: (toolResult: ToolResultEvent) => {
+                            setMessages((prev) =>
+                                prev.map((m) => {
+                                    if (m.id !== botMsgId) return m;
+                                    const existing = m.toolCalls ?? [];
+                                    const previous = existing.find(
+                                        (tc) => tc.id === toolResult.id,
+                                    );
+                                    const updated: ApiToolCall = {
+                                        id: toolResult.id,
+                                        tool_name: toolResult.name,
+                                        arguments:
+                                            previous?.arguments ?? {},
+                                        result: toolResult.result ?? null,
+                                        status: toolResult.status,
+                                        error_message:
+                                            toolResult.error ?? null,
+                                        duration_ms: toolResult.duration_ms,
+                                    };
+                                    return {
+                                        ...m,
+                                        toolCalls: existing.some(
+                                            (tc) => tc.id === toolResult.id,
+                                        )
+                                            ? existing.map((tc) =>
+                                                  tc.id === toolResult.id
+                                                      ? { ...tc, ...updated }
+                                                      : tc,
+                                              )
+                                            : [...existing, updated],
+                                    };
+                                }),
+                            );
+                        },
                         onDone: async () => {
                             setIsTyping(false);
                             const msgs = await listMessages(activeConvId);
-                            const messagesWithCitations = await Promise.all(
+                            const messagesWithSources = await Promise.all(
                                 msgs.map(async (m) => {
                                     if (m.sender_type === "BOT") {
-                                        const citations = await getCitations(
-                                            m.id,
-                                        );
+                                        const [citations, toolCalls] =
+                                            await Promise.all([
+                                                getCitations(m.id).catch(
+                                                    () => [] as ApiCitation[],
+                                                ),
+                                                getToolCalls(m.id).catch(
+                                                    () => [] as ApiToolCall[],
+                                                ),
+                                            ]);
                                         return {
                                             ...m,
                                             sender_type:
@@ -278,6 +377,7 @@ export default function ChatPage() {
                                                     | "user"
                                                     | "bot",
                                             citations,
+                                            toolCalls,
                                         };
                                     }
                                     return {
@@ -287,10 +387,11 @@ export default function ChatPage() {
                                                 | "user"
                                                 | "bot",
                                         citations: [] as ApiCitation[],
+                                        toolCalls: [] as ApiToolCall[],
                                     };
                                 }),
                             );
-                            setMessages(messagesWithCitations);
+                            setMessages(messagesWithSources);
                             listConversations().then(setConversations);
                         },
                         onError: (error) => {
@@ -642,6 +743,73 @@ export default function ChatPage() {
 
                                     {msg.sender_type === "bot" && (
                                         <div className="flex w-full flex-col gap-2">
+                                            {msg.toolCalls &&
+                                                msg.toolCalls.length > 0 && (
+                                                    <div className="flex flex-col gap-1.5">
+                                                        {msg.toolCalls.map(
+                                                            (toolCall) => (
+                                                                <Collapsible
+                                                                    key={
+                                                                        toolCall.id
+                                                                    }
+                                                                    open={
+                                                                        toolCallOpen ===
+                                                                        toolCall.id
+                                                                    }
+                                                                    onOpenChange={(
+                                                                        open,
+                                                                    ) =>
+                                                                        setToolCallOpen(
+                                                                            open
+                                                                                ? toolCall.id
+                                                                                : null,
+                                                                        )
+                                                                    }
+                                                                >
+                                                                    <CollapsibleTrigger className="flex w-fit items-center gap-1.5 rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 text-left text-xs font-medium text-foreground transition-colors hover:bg-muted">
+                                                                        <Wrench className="size-3 shrink-0 text-primary" />
+                                                                        <span>
+                                                                            {toolCallStatus(
+                                                                                toolCall,
+                                                                            )}
+                                                                            :{" "}
+                                                                            {toolCallLabel(
+                                                                                toolCall,
+                                                                            )}
+                                                                        </span>
+                                                                        <ChevronRight
+                                                                            className={cn(
+                                                                                "size-3 shrink-0 transition-transform",
+                                                                                toolCallOpen ===
+                                                                                    toolCall.id &&
+                                                                                    "rotate-90",
+                                                                            )}
+                                                                        />
+                                                                    </CollapsibleTrigger>
+                                                                    <CollapsibleContent>
+                                                                        <pre className="mt-1.5 max-h-72 overflow-auto rounded-lg border border-border bg-muted/50 p-3 text-[11px] leading-relaxed">
+                                                                            {JSON.stringify(
+                                                                                {
+                                                                                    tool: toolCall.tool_name,
+                                                                                    arguments:
+                                                                                        toolCall.arguments,
+                                                                                    status: toolCall.status,
+                                                                                    duration_ms:
+                                                                                        toolCall.duration_ms,
+                                                                                    result: toolCall.result,
+                                                                                    error: toolCall.error_message,
+                                                                                },
+                                                                                null,
+                                                                                2,
+                                                                            )}
+                                                                        </pre>
+                                                                    </CollapsibleContent>
+                                                                </Collapsible>
+                                                            ),
+                                                        )}
+                                                    </div>
+                                                )}
+
                                             {msg.citations &&
                                                 msg.citations.length > 0 &&
                                                 !msg.content.includes(

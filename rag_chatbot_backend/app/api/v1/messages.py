@@ -8,8 +8,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
 from app.dependencies import get_current_user, get_db
-from app.models import Conversation, Document, DocumentChunk, Message, MessageCitation, User
-from app.schemas.message import MessageCitationResponse, MessageCreate, MessageFeedbackUpdate
+from app.models import (
+    Conversation,
+    Document,
+    DocumentChunk,
+    Message,
+    MessageCitation,
+    MessageToolCall,
+    User,
+)
+from app.schemas.message import (
+    MessageCitationResponse,
+    MessageCreate,
+    MessageFeedbackUpdate,
+    MessageToolCallResponse,
+)
 from app.services.chat_service import stream_rag_answer
 
 
@@ -26,8 +39,14 @@ async def send_message(
 ):
     async def event_generator():
         try:
-            async for token in stream_rag_answer(db, conversation_id, payload, current_user):
-                yield {"event": "token", "data": token}
+            async for event in stream_rag_answer(db, conversation_id, payload, current_user):
+                if event.event == "token":
+                    yield {"event": "token", "data": event.data}
+                else:
+                    yield {
+                        "event": event.event,
+                        "data": json.dumps(event.data, ensure_ascii=False),
+                    }
             yield {"event": "done", "data": "[DONE]"}
         except Exception as exc:
             logger.exception("Chat stream failed for conversation %s", conversation_id)
@@ -72,6 +91,32 @@ async def get_message_citations(
         )
         for citation, chunk, document in rows
     ]
+
+
+@router.get(
+    "/messages/{message_id}/tool-calls",
+    response_model=list[MessageToolCallResponse],
+)
+async def get_message_tool_calls(
+    message_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    message = await db.scalar(select(Message).where(Message.id == message_id))
+    if not message:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
+    conversation = await db.scalar(select(Conversation).where(Conversation.id == message.conversation_id))
+    if not conversation:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+    if current_user.role != "admin" and conversation.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    result = await db.execute(
+        select(MessageToolCall)
+        .where(MessageToolCall.message_id == message_id)
+        .order_by(MessageToolCall.created_at.asc())
+    )
+    return result.scalars().all()
 
 
 @router.patch("/messages/{message_id}/feedback")
