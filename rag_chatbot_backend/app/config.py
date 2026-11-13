@@ -70,6 +70,13 @@ class Settings(BaseSettings):
     max_upload_mb: int | None = None
     allow_public_registration: bool = True
 
+    # ── Đa kênh: Telegram ─────────────────────────────────────
+    # Token lấy từ @BotFather. Để trống để tắt kênh Telegram.
+    telegram_bot_token: str | None = None
+    # Bắt buộc ở production. Telegram gửi lại trong header
+    # X-Telegram-Bot-Api-Secret-Token khi gọi webhook.
+    telegram_webhook_secret: str | None = None
+
     @field_validator("database_url", mode="before")
     @classmethod
     def normalize_database_url(cls, v: str) -> str:

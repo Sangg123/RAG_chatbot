@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -10,6 +10,13 @@ from app.database import Base
 
 class Conversation(Base):
     __tablename__ = "conversations"
+    __table_args__ = (
+        Index(
+            "ix_conversations_channel_external_chat",
+            "channel",
+            "external_chat_id",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
@@ -19,6 +26,14 @@ class Conversation(Base):
         index=True,
     )
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # "web" cho giao diện hiện tại; "telegram"/"zalo"... cho các kênh ngoài.
+    channel: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="web",
+        server_default="web",
+    )
+    external_chat_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

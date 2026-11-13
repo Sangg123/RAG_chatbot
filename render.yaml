@@ -60,6 +60,14 @@ services:
       - key: ALLOW_PUBLIC_REGISTRATION
         value: "false"
 
+      # Telegram channel. Token is pasted from @BotFather.
+      # Secret must be sent again when registering the webhook:
+      #   python scripts/telegram_webhook.py --url https://<backend>/api/v1/channels/telegram/webhook
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_WEBHOOK_SECRET
+        sync: false
+
       # Set this to the exact Vercel origin, including https://.
       # Example: ["https://rag-chatbot.vercel.app"]
       - key: BACKEND_CORS_ORIGINS

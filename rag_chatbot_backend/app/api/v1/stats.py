@@ -15,7 +15,13 @@ async def get_stats(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_admin),
 ):
-    user_count = await db.scalar(select(func.count(User.id))) or 0
+    # Không tính user guest được tạo tự động cho các kênh ngoài.
+    user_count = (
+        await db.scalar(
+            select(func.count(User.id)).where(User.role != "guest")
+        )
+        or 0
+    )
     kb_count = await db.scalar(select(func.count(KnowledgeBase.id))) or 0
     doc_count = await db.scalar(select(func.count(Document.id))) or 0
     conv_count = await db.scalar(select(func.count(Conversation.id))) or 0

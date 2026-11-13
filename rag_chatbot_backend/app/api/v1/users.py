@@ -25,6 +25,9 @@ async def list_users(
         stmt = stmt.where(or_(User.username.ilike(f"%{safe}%"), User.email.ilike(f"%{safe}%")))
     if role:
         stmt = stmt.where(User.role == role)
+    else:
+        # Mặc định ẩn guest do kênh ngoài tự tạo; admin vẫn lọc role=guest được.
+        stmt = stmt.where(User.role != "guest")
     users = (await db.execute(stmt)).scalars().all()
     return list(users)
 

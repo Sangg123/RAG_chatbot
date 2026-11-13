@@ -33,6 +33,7 @@ Backend được triển khai trong thư mục `rag_chatbot_backend` với các 
 - Tích hợp với Google Gemini API
 - **AI tool calling (Gemini function calling)** tra cứu đơn hàng có cấu trúc từ PostgreSQL
 - Lưu audit log mỗi lần AI gọi tool vào bảng `message_tool_calls`
+- **Đa kênh**: Telegram bot dùng chung lõi RAG + tool calling (webhook cho production, long-polling cho local)
 - Xử lý tải lên tài liệu
 
 ### Công nghệ sử dụng:
@@ -124,6 +125,12 @@ GEMINI_EMBED_BATCH_SIZE=50
 # Số tin nhắn gần nhất gửi kèm để AI hiểu câu hỏi nối tiếp.
 CHAT_HISTORY_MAX_MESSAGES=8
 
+# Đa kênh Telegram
+# Token lấy từ @BotFather; để trống nếu chưa dùng Telegram.
+TELEGRAM_BOT_TOKEN=
+# Bắt buộc khi ENVIRONMENT=production.
+TELEGRAM_WEBHOOK_SECRET=
+
 # Upload / registration
 # Render free: MAX_UPLOAD_MB=20, ALLOW_PUBLIC_REGISTRATION=false
 MAX_UPLOAD_MB=20
@@ -163,6 +170,7 @@ Backend cung cấp các endpoint API chính (tiền tố `/api/v1`):
 - `GET /conversations/{id}/messages` - Lấy lịch sử tin nhắn
 - `GET /messages/{id}/citations` - Lấy trích dẫn RAG của câu trả lời
 - `GET /messages/{id}/tool-calls` - Lấy các tool call AI đã thực hiện
+- `POST /channels/telegram/webhook` - Nhận update từ Telegram (xác thực bằng secret header)
 - `GET /health` - Kiểm tra tình trạng hệ thống
 
 ### SSE events của chat
@@ -249,6 +257,36 @@ với đúng tài khoản demo và tạo tài khoản demo.
 Dữ liệu mẫu: `DH123`, `DH124`, `DH125`, `DH126`, `DH127`, `DH1001`.
 Chi tiết kiến trúc và kịch bản demo: [`rag_chatbot_backend/TOOL_CALLING.md`](rag_chatbot_backend/TOOL_CALLING.md).
 
+## Đa kênh Telegram
+
+Chatbot web hiện có thêm kênh Telegram dùng chung lõi RAG và tool tra cứu đơn:
+
+- Khách nhắn bot Telegram → adapter chuyển thành `IncomingMessage`.
+- `channel_service` định danh khách, chọn/tạo hội thoại.
+- Gọi lại `stream_rag_answer` như giao diện web, nên câu trả lời và quyền
+  truy cập đơn hàng giống hệt.
+- Khách dùng `/link <username> <password>` để liên kết tài khoản web và tra
+  cứu đơn của chính mình.
+- Hội thoại Telegram được đánh dấu `channel='telegram'` và hiển thị trong
+  Admin → Lịch sử hội thoại.
+
+Chạy local:
+
+```bash
+cd rag_chatbot_backend
+alembic upgrade head
+python scripts/telegram_polling.py
+```
+
+Production dùng webhook:
+
+```bash
+python scripts/telegram_webhook.py --url https://<backend>/api/v1/channels/telegram/webhook
+```
+
+Hướng dẫn đầy đủ (tạo bot, cấu hình, kịch bản demo, bảo mật, mở rộng Zalo):
+[`rag_chatbot_backend/TELEGRAM_INTEGRATION.md`](rag_chatbot_backend/TELEGRAM_INTEGRATION.md).
+
 ## Kiểm thử
 
 Hướng dẫn kiểm thử TC15, TC18, TC19 (giới hạn độ dài câu hỏi, phân quyền admin, truy cập hội thoại của người khác):
@@ -270,11 +308,11 @@ Script dùng hai tài khoản demo `nguyen.van.an` và `tran.thi.binh` để ki�
 chủ đơn tra cứu được đơn của mình, còn người khác biết mã đơn/SĐT thì bị từ chối
 và không lộ dữ liệu. Mặc định script xóa conversation test sau khi chạy.
 
-Unit test guardrail không cần DB/API:
+Unit test guardrail và kênh Telegram không cần DB/API:
 
 ```bash
 cd rag_chatbot_backend
-python -m unittest tests.test_order_intent -v
+python -m unittest tests.test_order_intent tests.test_telegram_channel -v
 ```
 
 Chi tiết và cách test thủ công bằng Postman/curl: xem [`rag_chatbot_backend/TESTING_TC15_TC18_TC19.md`](rag_chatbot_backend/TESTING_TC15_TC18_TC19.md).

@@ -216,6 +216,28 @@ Xem log Render để chắc chắn:
 
 > Request đầu tiên sau 15 phút idle có thể mất khoảng 1 phút do Render free spin down. Đây là bình thường.
 
+### 3.5. Bật kênh Telegram (tùy chọn)
+
+1. Tạo bot với `@BotFather`, lấy token.
+2. Trên Render → Environment, thêm:
+
+| Key | Value |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` | Token từ BotFather |
+| `TELEGRAM_WEBHOOK_SECRET` | Chuỗi random dài, ví dụ `openssl rand -hex 32` |
+
+3. Redeploy để backend nhận biến mới.
+4. Từ máy local (đặt cùng secret trong `rag_chatbot_backend/.env`), đăng ký webhook:
+
+```powershell
+cd rag_chatbot_backend
+python scripts/telegram_webhook.py --url https://<render-service>.onrender.com/api/v1/channels/telegram/webhook
+```
+
+5. Mở bot Telegram, gửi `/start`.
+
+Chi tiết đầy đủ: [`rag_chatbot_backend/TELEGRAM_INTEGRATION.md`](rag_chatbot_backend/TELEGRAM_INTEGRATION.md).
+
 ---
 
 ## 4. Deploy frontend lên Vercel

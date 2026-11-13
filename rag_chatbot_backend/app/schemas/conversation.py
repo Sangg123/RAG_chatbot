@@ -12,6 +12,8 @@ class ConversationResponse(BaseModel):
     id: UUID
     user_id: UUID
     title: str | None = None
+    channel: str = "web"
+    external_chat_id: str | None = None
     created_at: datetime
     updated_at: datetime | None = None
     message_count: int = 0

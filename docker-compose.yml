@@ -94,6 +94,8 @@ services:
             ADMIN_SEED_USERNAME: ${ADMIN_SEED_USERNAME:-admin}
             ADMIN_SEED_EMAIL: ${ADMIN_SEED_EMAIL:-admin@company.com}
             ADMIN_SEED_PASSWORD: ${ADMIN_SEED_PASSWORD:-admin123}
+            TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+            TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-}
         ports:
             - "${BACKEND_PORT:-8000}:8000"
         volumes:

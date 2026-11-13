@@ -25,8 +25,31 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
+const channelMeta: Record<string, { label: string; className: string }> = {
+    web: {
+        label: "Web",
+        className: "border-sky-500/20 bg-sky-500/10 text-sky-700",
+    },
+    telegram: {
+        label: "Telegram",
+        className: "border-cyan-500/20 bg-cyan-500/10 text-cyan-700",
+    },
+};
+
+function getChannelMeta(channel?: string) {
+    return (
+        channelMeta[channel ?? "web"] ?? {
+            label: channel ?? "Khác",
+            className: "border-border bg-muted text-muted-foreground",
+        }
+    );
+}
+
 export default function ConversationsPage() {
     const [search, setSearch] = useState("");
+    const [channelFilter, setChannelFilter] = useState<
+        "all" | "web" | "telegram"
+    >("all");
     const [selected, setSelected] = useState<string | null>(null);
     const [conversations, setConversations] = useState<Conversation[]>([]);
     const [selectedMessages, setSelectedMessages] = useState<
@@ -68,9 +91,15 @@ export default function ConversationsPage() {
             .catch(() => {});
     }, [selected]);
 
-    const filtered = conversations.filter((c) =>
-        (c.title || "").toLowerCase().includes(search.toLowerCase()),
-    );
+    const filtered = conversations.filter((c) => {
+        const matchesSearch = (c.title || "")
+            .toLowerCase()
+            .includes(search.toLowerCase());
+        const matchesChannel =
+            channelFilter === "all" ||
+            (c.channel ?? "web") === channelFilter;
+        return matchesSearch && matchesChannel;
+    });
 
     const selectedConv = conversations.find((c) => c.id === selected);
 
@@ -113,6 +142,29 @@ export default function ConversationsPage() {
                                 value={search}
                                 onChange={(e) => setSearch(e.target.value)}
                             />
+                        </div>
+                        <div className="mt-3 flex gap-2">
+                            {(
+                                [
+                                    ["all", "Tất cả"],
+                                    ["web", "Web"],
+                                    ["telegram", "Telegram"],
+                                ] as const
+                            ).map(([value, label]) => (
+                                <Button
+                                    key={value}
+                                    variant="outline"
+                                    size="sm"
+                                    className={cn(
+                                        "h-7 px-2.5 text-xs",
+                                        channelFilter === value &&
+                                            "border-primary/30 bg-primary/10 text-primary",
+                                    )}
+                                    onClick={() => setChannelFilter(value)}
+                                >
+                                    {label}
+                                </Button>
+                            ))}
                         </div>
                     </div>
 
@@ -159,7 +211,21 @@ export default function ConversationsPage() {
                                                     {conv.title}
                                                 </div>
                                                 <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-                                                    <span>User</span>
+                                                    <Badge
+                                                        variant="outline"
+                                                        className={cn(
+                                                            "h-4 px-1.5 text-[10px]",
+                                                            getChannelMeta(
+                                                                conv.channel,
+                                                            ).className,
+                                                        )}
+                                                    >
+                                                        {
+                                                            getChannelMeta(
+                                                                conv.channel,
+                                                            ).label
+                                                        }
+                                                    </Badge>
                                                     <span>·</span>
                                                     <Badge
                                                         variant="secondary"
@@ -205,9 +271,30 @@ export default function ConversationsPage() {
                                     <h3 className="text-sm font-bold text-foreground">
                                         {selectedConv.title}
                                     </h3>
-                                    <div className="mt-0.5 text-xs text-muted-foreground">
-                                        Tạo:{" "}
-                                        {formatDate(selectedConv.created_at)}
+                                    <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                                        <span>Kênh:</span>
+                                        <Badge
+                                            variant="outline"
+                                            className={cn(
+                                                "h-4 px-1.5 text-[10px]",
+                                                getChannelMeta(
+                                                    selectedConv.channel,
+                                                ).className,
+                                            )}
+                                        >
+                                            {
+                                                getChannelMeta(
+                                                    selectedConv.channel,
+                                                ).label
+                                            }
+                                        </Badge>
+                                        <span>·</span>
+                                        <span>
+                                            Tạo:{" "}
+                                            {formatDate(
+                                                selectedConv.created_at,
+                                            )}
+                                        </span>
                                     </div>
                                 </div>
                                 <div className="flex gap-2">

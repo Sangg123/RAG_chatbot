@@ -110,7 +110,11 @@ def _record_tool_event(
 
 
 async def create_conversation(db: AsyncSession, user_id: uuid.UUID, title: str | None) -> dict:
-    conv = Conversation(user_id=user_id, title=title or "New conversation")
+    conv = Conversation(
+        user_id=user_id,
+        title=title or "New conversation",
+        channel="web",
+    )
     db.add(conv)
     await db.commit()
     await db.refresh(conv)
@@ -118,6 +122,8 @@ async def create_conversation(db: AsyncSession, user_id: uuid.UUID, title: str |
         "id": conv.id,
         "user_id": conv.user_id,
         "title": conv.title,
+        "channel": conv.channel,
+        "external_chat_id": conv.external_chat_id,
         "created_at": conv.created_at,
         "updated_at": conv.updated_at,
         "message_count": 0,
@@ -155,6 +161,8 @@ async def list_conversations(db: AsyncSession, current_user: User, include_all: 
             "id": conv.id,
             "user_id": conv.user_id,
             "title": conv.title,
+            "channel": conv.channel,
+            "external_chat_id": conv.external_chat_id,
             "created_at": conv.created_at,
             "updated_at": conv.updated_at,
             "message_count": count,
