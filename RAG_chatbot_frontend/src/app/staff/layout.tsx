@@ -30,6 +30,9 @@ export default function StaffLayout({
     const [waitingCount, setWaitingCount] = useState(0);
     const [authReady, setAuthReady] = useState(false);
     const [authError, setAuthError] = useState("");
+    const [accessDeniedRole, setAccessDeniedRole] = useState<string | null>(
+        null,
+    );
 
     useEffect(() => {
         let cancelled = false;
@@ -51,7 +54,7 @@ export default function StaffLayout({
                     currentUser.role !== "admin" &&
                     currentUser.role !== "staff"
                 ) {
-                    router.replace("/login");
+                    setAccessDeniedRole(currentUser.role);
                 }
             } catch (error) {
                 if (cancelled) return;
@@ -112,6 +115,25 @@ export default function StaffLayout({
         );
     }
 
+    if (accessDeniedRole) {
+        return (
+            <div className="flex h-screen items-center justify-center p-6 text-center">
+                <div>
+                    <p className="font-semibold text-destructive">
+                        Tài khoản không có quyền truy cập bàn hỗ trợ.
+                    </p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                        API hiện tại xác nhận {user.username} có role{" "}
+                        <strong>{accessDeniedRole}</strong>, cần role staff
+                        hoặc admin. Nếu role trong Neon đang là staff, hãy kiểm
+                        tra NEXT_PUBLIC_API_URL trên Vercel và DATABASE_URL
+                        trên Render có trỏ cùng môi trường không.
+                    </p>
+                </div>
+            </div>
+        );
+    }
+
     const handleLogout = () => {
         logout();
         router.push("/login");
@@ -158,7 +180,7 @@ export default function StaffLayout({
                         )}
                     </Link>
                     <Link
-                        href="/chat"
+                        href="/chat?mode=ai"
                         className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                     >
                         <Bot className="size-4" />

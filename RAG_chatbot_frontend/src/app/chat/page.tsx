@@ -211,7 +211,14 @@ export default function ChatPage() {
                 return;
             }
 
-            await syncCurrentUser();
+            const currentUser = await syncCurrentUser();
+            const requestedAiChat =
+                new URLSearchParams(window.location.search).get("mode") ===
+                "ai";
+            if (currentUser.role === "staff" && !requestedAiChat) {
+                router.replace("/staff");
+                return;
+            }
             const convs = await listConversations();
             if (convs.length > 0) {
                 setConversations(convs);
