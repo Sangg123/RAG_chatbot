@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { logout } from "@/lib/auth";
+import { logout, refreshAccessToken, syncCurrentUser } from "@/lib/auth";
 import { useAuth } from "@/lib/use-auth";
 import { getSupportStats } from "@/lib/api";
 
@@ -28,12 +28,47 @@ export default function StaffLayout({
     const router = useRouter();
     const { user, authenticated, admin, staff } = useAuth();
     const [waitingCount, setWaitingCount] = useState(0);
+    const [authReady, setAuthReady] = useState(false);
+    const [authError, setAuthError] = useState("");
 
     useEffect(() => {
-        if (authenticated && !admin && !staff) {
-            router.replace("/login");
-        }
-    }, [authenticated, admin, staff, router]);
+        let cancelled = false;
+
+        const verifySupportAccess = async () => {
+            try {
+                if (!authenticated) {
+                    const refreshed = await refreshAccessToken();
+                    if (!refreshed) {
+                        router.replace("/login");
+                        return;
+                    }
+                }
+
+                const currentUser = await syncCurrentUser();
+                if (cancelled) return;
+                setAuthReady(true);
+                if (
+                    currentUser.role !== "admin" &&
+                    currentUser.role !== "staff"
+                ) {
+                    router.replace("/login");
+                }
+            } catch (error) {
+                if (cancelled) return;
+                setAuthError(
+                    error instanceof Error
+                        ? error.message
+                        : "Không thể xác minh quyền truy cập.",
+                );
+                setAuthReady(true);
+            }
+        };
+
+        void verifySupportAccess();
+        return () => {
+            cancelled = true;
+        };
+    }, [authenticated, router]);
 
     useEffect(() => {
         if (!authenticated || (!admin && !staff)) {
@@ -58,8 +93,23 @@ export default function StaffLayout({
         };
     }, [authenticated, admin, staff]);
 
-    if (!user) {
+    if (!authReady || !user) {
         return null;
+    }
+
+    if (authError) {
+        return (
+            <div className="flex h-screen items-center justify-center p-6 text-center">
+                <div>
+                    <p className="font-semibold text-destructive">
+                        Không thể xác minh quyền truy cập bàn hỗ trợ.
+                    </p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                        {authError}
+                    </p>
+                </div>
+            </div>
+        );
     }
 
     const handleLogout = () => {

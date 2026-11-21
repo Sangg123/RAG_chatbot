@@ -211,6 +211,7 @@ export default function ChatPage() {
                 return;
             }
 
+            await syncCurrentUser();
             const convs = await listConversations();
             if (convs.length > 0) {
                 setConversations(convs);
