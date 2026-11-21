@@ -317,7 +317,6 @@ async def trigger_handoff(
         .where(
             Conversation.id == conversation_id,
             Conversation.support_mode == SUPPORT_MODE_BOT,
-            Conversation.resolved_at.is_(None),
         )
         .values(
             support_mode=SUPPORT_MODE_WAITING,
