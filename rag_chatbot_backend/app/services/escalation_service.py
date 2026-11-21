@@ -25,6 +25,7 @@ _EXPLICIT_HUMAN_PATTERNS = tuple(
         r"\b(?:can|goi)\s+(?:nguoi|ho\s+tro\s+vien)\s+that\b",
         r"\bnhan\s+vien\s+(?:ho\s+tro|that|tu\s+van)\b",
         r"\bnoi\s+chuyen\s+voi\s+(?:nguoi|nhan\s+vien)\b",
+        r"\b(?:chat|tro\s+chuyen)\s+voi\s+(?:nhan\s+vien|nguoi\s+that|tu\s+van\s+vien)\b",
         r"\bho\s+tro\s+truc\s+tiep\b",
         r"\b(?:gap|goi)\s+(?:support|ho\s+tro\s+vien)\b",
         r"\b(?:live\s+agent|real\s+person|human\s+agent)\b",

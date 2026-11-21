@@ -779,6 +779,28 @@ export default function ChatPage() {
                         <Database className="size-3" />
                         Knowledge Base
                     </Badge>
+                    {(userIsStaff || userIsAdmin) && (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            nativeButton={false}
+                            render={
+                                <Link
+                                    href={
+                                        userIsAdmin
+                                            ? "/admin/support"
+                                            : "/staff"
+                                    }
+                                />
+                            }
+                            className="shrink-0 gap-1.5"
+                        >
+                            <Headset />
+                            <span className="hidden sm:inline">
+                                Bàn hỗ trợ
+                            </span>
+                        </Button>
+                    )}
                 </div>
 
                 {supportMode !== "bot" && (

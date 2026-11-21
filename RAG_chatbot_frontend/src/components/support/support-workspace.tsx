@@ -819,7 +819,8 @@ export function SupportWorkspace({ mode }: { mode: WorkspaceMode }) {
                                                     }
                                                     disabled={actionBusy}
                                                 >
-                                                    Trả về AI
+                                                    <Bot />
+                                                    Kết thúc & trả về AI
                                                 </Button>
                                             )}
                                         <Button
@@ -1105,6 +1106,23 @@ export function SupportWorkspace({ mode }: { mode: WorkspaceMode }) {
                                                       ? "Tin nhắn sẽ được gửi qua Telegram."
                                                       : "Khách sẽ thấy tin nhắn khi tải lại hội thoại."}
                                             </span>
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                className="ml-auto h-7 gap-1.5 border-emerald-500/30 text-emerald-700 hover:bg-emerald-500/10"
+                                                onClick={() =>
+                                                    void handleReturnToBot()
+                                                }
+                                                disabled={actionBusy}
+                                            >
+                                                {actionBusy ? (
+                                                    <LoaderCircle className="animate-spin" />
+                                                ) : (
+                                                    <CheckCircle2 />
+                                                )}
+                                                Kết thúc &amp; trả về AI
+                                            </Button>
                                         </div>
                                         <div
                                             className={cn(

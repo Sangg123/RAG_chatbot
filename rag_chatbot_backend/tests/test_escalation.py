@@ -15,6 +15,7 @@ from app.services.escalation_service import (
         ("chán quá, không ai trả lời", "chan"),
         ("TÔI MUỐN GẶP NHÂN VIÊN", "gap nhan vien"),
         ("cho tôi nói chuyện với người thật", "noi chuyen voi nguoi"),
+        ("tôi muốn chat với nhân viên", "chat voi nhan vien"),
         ("chuyển cho nhân viên hỗ trợ", "chuyen cho nhan vien"),
         ("gọi support giúp tôi", "goi support"),
         ("this is useless, I want a human", "useless"),
