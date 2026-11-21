@@ -51,3 +51,16 @@ async def get_current_admin(current_user: User = Depends(get_current_user)) -> U
     if current_user.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
     return current_user
+
+
+async def get_current_support_agent(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """Cho phép staff và admin dùng các API của bàn hỗ trợ."""
+
+    if current_user.role not in {"staff", "admin"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Staff access required",
+        )
+    return current_user

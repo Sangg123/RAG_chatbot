@@ -1,7 +1,8 @@
 import uuid
 from datetime import datetime
+from typing import Optional
 
-from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -34,6 +35,28 @@ class Conversation(Base):
         server_default="web",
     )
     external_chat_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # "bot": AI đang trả lời; "waiting": chờ nhân viên nhận; "human": nhân viên
+    # đang trực tiếp hỗ trợ khách.
+    support_mode: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="bot",
+        server_default="bot",
+        index=True,
+    )
+    assigned_staff_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    handoff_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    handoff_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    summary_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -43,7 +66,13 @@ class Conversation(Base):
         back_populates="conversation",
         cascade="all, delete-orphan",
     )
-    user: Mapped["User"] = relationship(back_populates="conversations")
+    user: Mapped["User"] = relationship(
+        back_populates="conversations",
+        foreign_keys=[user_id],
+    )
+    assigned_staff: Mapped[Optional["User"]] = relationship(
+        foreign_keys=[assigned_staff_id],
+    )
 
 
 class Message(Base):
@@ -57,6 +86,20 @@ class Message(Base):
         index=True,
     )
     sender_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    # Nhân viên gửi tin (sender_type = "STAFF"). Khách/BOT để trống.
+    sender_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    # Ghi chú nội bộ: chỉ staff/admin thấy, không gửi khách.
+    is_internal: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
     content: Mapped[str] = mapped_column(Text, nullable=False)
     rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
     feedback_text: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -65,6 +108,7 @@ class Message(Base):
     )
 
     conversation: Mapped["Conversation"] = relationship(back_populates="messages")
+    sender: Mapped[Optional["User"]] = relationship(foreign_keys=[sender_id])
     citations: Mapped[list["MessageCitation"]] = relationship(
         back_populates="message",
         cascade="all, delete-orphan",

@@ -20,14 +20,14 @@ class UserCreate(BaseModel):
     username: str = Field(min_length=3, max_length=100)
     email: EmailStr
     password: str = Field(min_length=6, max_length=128)
-    role: Literal["admin", "user"] = "user"
+    role: Literal["admin", "staff", "user"] = "user"
     is_active: bool = True
 
 
 class UserUpdate(BaseModel):
     username: str | None = Field(default=None, min_length=3, max_length=100)
     email: EmailStr | None = None
-    role: Literal["admin", "user"] | None = None
+    role: Literal["admin", "staff", "user"] | None = None
     is_active: bool | None = None
 
 

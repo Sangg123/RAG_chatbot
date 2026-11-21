@@ -10,6 +10,7 @@ from app.schemas.message import MessageResponse
 from app.services.chat_service import (
     create_conversation,
     delete_conversation,
+    get_conversation,
     list_conversations,
     list_messages,
 )
@@ -36,6 +37,15 @@ async def list_conversations_endpoint(
     if include_all and current_user.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
     return await list_conversations(db, current_user, include_all=include_all)
+
+
+@router.get("/{conversation_id}", response_model=ConversationResponse)
+async def get_conversation_endpoint(
+    conversation_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await get_conversation(db, conversation_id, current_user)
 
 
 @router.delete("/{conversation_id}", status_code=204)

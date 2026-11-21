@@ -6,8 +6,9 @@ from datetime import datetime, timezone
 from typing import AsyncIterator
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
 from app.models import (
@@ -19,6 +20,13 @@ from app.models import (
 )
 from app.schemas.message import MessageCreate
 from app.services.agent_service import stream_order_agent
+from app.services.escalation_service import detect_escalation
+from app.services.handoff_service import (
+    HANDOFF_CUSTOMER_NOTICE,
+    SUPPORT_MODE_BOT,
+    can_view_conversation,
+    trigger_handoff,
+)
 from app.services.order_intent import detect_order_intent, is_policy_question
 from app.services.rag_service import (
     build_context_prompt,
@@ -77,7 +85,10 @@ async def _load_recent_history(
 
     stmt = (
         select(Message)
-        .where(Message.conversation_id == conversation_id)
+        .where(
+            Message.conversation_id == conversation_id,
+            Message.is_internal.is_(False),
+        )
         .order_by(Message.created_at.desc())
         .limit(limit)
     )
@@ -124,6 +135,13 @@ async def create_conversation(db: AsyncSession, user_id: uuid.UUID, title: str |
         "title": conv.title,
         "channel": conv.channel,
         "external_chat_id": conv.external_chat_id,
+        "support_mode": conv.support_mode,
+        "assigned_staff_id": conv.assigned_staff_id,
+        "handoff_reason": conv.handoff_reason,
+        "handoff_at": conv.handoff_at,
+        "summary": conv.summary,
+        "summary_updated_at": conv.summary_updated_at,
+        "resolved_at": conv.resolved_at,
         "created_at": conv.created_at,
         "updated_at": conv.updated_at,
         "message_count": 0,
@@ -145,11 +163,15 @@ async def delete_conversation(
 
 
 async def list_conversations(db: AsyncSession, current_user: User, include_all: bool = False) -> list[dict]:
+    message_join = Message.conversation_id == Conversation.id
+    if current_user.role not in {"staff", "admin"}:
+        message_join = and_(message_join, Message.is_internal.is_(False))
+
     stmt = (
         select(Conversation, func.count(Message.id).label("message_count"))
-        .outerjoin(Message, Message.conversation_id == Conversation.id)
+        .outerjoin(Message, message_join)
         .group_by(Conversation.id)
-        .order_by(Conversation.created_at.desc())
+        .order_by(func.coalesce(Conversation.updated_at, Conversation.created_at).desc())
     )
     if include_all and current_user.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
@@ -163,6 +185,13 @@ async def list_conversations(db: AsyncSession, current_user: User, include_all: 
             "title": conv.title,
             "channel": conv.channel,
             "external_chat_id": conv.external_chat_id,
+            "support_mode": conv.support_mode,
+            "assigned_staff_id": conv.assigned_staff_id,
+            "handoff_reason": conv.handoff_reason,
+            "handoff_at": conv.handoff_at,
+            "summary": conv.summary,
+            "summary_updated_at": conv.summary_updated_at,
+            "resolved_at": conv.resolved_at,
             "created_at": conv.created_at,
             "updated_at": conv.updated_at,
             "message_count": count,
@@ -171,16 +200,60 @@ async def list_conversations(db: AsyncSession, current_user: User, include_all: 
     ]
 
 
+async def get_conversation(
+    db: AsyncSession,
+    conversation_id: uuid.UUID,
+    current_user: User,
+) -> dict:
+    conv = await db.scalar(select(Conversation).where(Conversation.id == conversation_id))
+    if not conv:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+    if not can_view_conversation(current_user, conv):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    message_count_stmt = select(func.count(Message.id)).where(
+        Message.conversation_id == conversation_id
+    )
+    if current_user.role not in {"staff", "admin"}:
+        message_count_stmt = message_count_stmt.where(Message.is_internal.is_(False))
+    message_count = (await db.scalar(message_count_stmt)) or 0
+    return {
+        "id": conv.id,
+        "user_id": conv.user_id,
+        "title": conv.title,
+        "channel": conv.channel,
+        "external_chat_id": conv.external_chat_id,
+        "support_mode": conv.support_mode,
+        "assigned_staff_id": conv.assigned_staff_id,
+        "handoff_reason": conv.handoff_reason,
+        "handoff_at": conv.handoff_at,
+        "summary": conv.summary,
+        "summary_updated_at": conv.summary_updated_at,
+        "resolved_at": conv.resolved_at,
+        "created_at": conv.created_at,
+        "updated_at": conv.updated_at,
+        "message_count": message_count,
+    }
+
+
 async def list_messages(db: AsyncSession, conversation_id: uuid.UUID, current_user: User) -> list[Message]:
     conv = await db.scalar(select(Conversation).where(Conversation.id == conversation_id))
     if not conv:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
-    if current_user.role != "admin" and conv.user_id != current_user.id:
+    if not can_view_conversation(current_user, conv):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    result = await db.execute(
-        select(Message).where(Message.conversation_id == conversation_id).order_by(Message.created_at.asc())
+
+    stmt = (
+        select(Message)
+        .options(selectinload(Message.sender))
+        .where(Message.conversation_id == conversation_id)
+        .order_by(Message.created_at.asc())
     )
-    return result.scalars().all()
+    # Ghi chú nội bộ của staff không bao giờ được trả về cho khách.
+    if current_user.role not in {"staff", "admin"}:
+        stmt = stmt.where(Message.is_internal.is_(False))
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
 
 
 async def stream_rag_answer(
@@ -196,6 +269,53 @@ async def stream_rag_answer(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     has_default_title = _is_default_title(conv.title)
+    if has_default_title:
+        conv.title = _fallback_title_from_message(payload.content)
+
+    # Lưu tin nhắn khách trước khi kiểm tra chuyển giao để không mất lịch sử.
+    now = datetime.now(timezone.utc)
+    user_message = Message(
+        conversation_id=conversation_id,
+        sender_type="USER",
+        content=payload.content,
+    )
+    db.add(user_message)
+    conv.updated_at = now
+    await db.commit()
+    await db.refresh(user_message)
+    await db.refresh(conv)
+
+    # Nhân viên đang xử lý: không gọi AI, chỉ lưu tin nhắn để staff thấy.
+    if conv.support_mode != SUPPORT_MODE_BOT:
+        yield ChatEvent(
+            "handoff",
+            {
+                "support_mode": conv.support_mode,
+                "announce": False,
+                "reason": conv.handoff_reason,
+            },
+        )
+        return
+
+    # Tự động chuyển giao khi phát hiện khách bức xúc. Không có nút yêu cầu
+    # nhân viên nên khách chỉ được chuyển khi nội dung thực sự có tín hiệu.
+    escalation = detect_escalation(payload.content)
+    if escalation is not None:
+        changed = await trigger_handoff(db, conv, escalation.reason)
+        if not changed:
+            await db.refresh(conv)
+        if conv.support_mode != SUPPORT_MODE_BOT:
+            yield ChatEvent(
+                "handoff",
+                {
+                    "support_mode": conv.support_mode,
+                    "announce": changed,
+                    "reason": escalation.reason,
+                    "notice": HANDOFF_CUSTOMER_NOTICE if changed else None,
+                },
+            )
+            return
+
     intent = detect_order_intent(payload.content)
     logger.info(
         "Chat intent conversation=%s intent=%s forced_tool=%s reason=%s",
@@ -212,15 +332,6 @@ async def stream_rag_answer(
             conversation_id,
             settings.chat_history_max_messages,
         )
-
-    user_message = Message(
-        conversation_id=conversation_id,
-        sender_type="USER",
-        content=payload.content,
-    )
-    db.add(user_message)
-    await db.commit()
-    await db.refresh(user_message)
 
     # Tra cứu đơn trực tiếp không cần embedding tài liệu. Chỉ retrieval khi
     # câu hỏi không phải đơn hàng hoặc đơn hàng có kèm chủ đề chính sách.

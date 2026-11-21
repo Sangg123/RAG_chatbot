@@ -22,4 +22,7 @@ class User(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    conversations: Mapped[list["Conversation"]] = relationship(back_populates="user")
+    conversations: Mapped[list["Conversation"]] = relationship(
+        back_populates="user",
+        foreign_keys="Conversation.user_id",
+    )

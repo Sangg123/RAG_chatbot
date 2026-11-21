@@ -73,15 +73,31 @@ export interface Conversation {
   title: string | null;
   channel: string;
   external_chat_id: string | null;
+  support_mode: "bot" | "waiting" | "human";
+  assigned_staff_id: string | null;
+  handoff_reason: string | null;
+  handoff_at: string | null;
+  summary: string | null;
+  summary_updated_at: string | null;
+  resolved_at: string | null;
   created_at: string;
   updated_at: string | null;
   message_count: number;
+}
+
+export interface MessageSender {
+  id: string;
+  username: string;
+  role: string;
 }
 
 export interface Message {
   id: string;
   conversation_id: string;
   sender_type: string;
+  sender_id: string | null;
+  sender: MessageSender | null;
+  is_internal: boolean;
   content: string;
   rating: number | null;
   feedback_text: string | null;
@@ -138,9 +154,65 @@ export interface User {
   id: string;
   username: string;
   email: string;
-  role: "admin" | "user";
+  role: "admin" | "staff" | "user";
   is_active: boolean;
   created_at: string;
+}
+
+export interface SupportConversation {
+  id: string;
+  title: string | null;
+  channel: string;
+  external_chat_id: string | null;
+  support_mode: "bot" | "waiting" | "human";
+  handoff_reason: string | null;
+  handoff_at: string | null;
+  resolved_at: string | null;
+  summary: string | null;
+  summary_updated_at: string | null;
+  assigned_staff_id: string | null;
+  assigned_staff_username: string | null;
+  customer_name: string;
+  customer_username: string | null;
+  customer_external_username: string | null;
+  customer_is_linked: boolean;
+  message_count: number;
+  last_message_preview: string | null;
+  last_message_at: string | null;
+  waiting_seconds: number;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface SupportConversationDetail extends SupportConversation {
+  messages: Message[];
+}
+
+export interface SupportStats {
+  waiting_count: number;
+  assigned_to_me: number;
+  active_count: number;
+}
+
+export interface SupportStaffOption {
+  id: string;
+  username: string;
+  email: string;
+  active_count: number;
+}
+
+export interface SupportAction {
+  ok: boolean;
+  support_mode: "bot" | "waiting" | "human";
+  assigned_staff_id: string | null;
+  resolved_at: string | null;
+}
+
+export interface SupportMessageResult {
+  ok: boolean;
+  delivered: boolean;
+  warning: string | null;
+  message: Message | null;
 }
 
 export interface AuthPayload {
@@ -205,6 +277,10 @@ export function createConversation(title?: string) {
   });
 }
 
+export function getConversation(id: string) {
+  return apiFetch<Conversation>(`/conversations/${id}`);
+}
+
 export function deleteConversation(id: string) {
   return apiFetch<void>(`/conversations/${id}`, { method: "DELETE" });
 }
@@ -222,10 +298,20 @@ export function getToolCalls(messageId: string) {
 }
 
 export function submitFeedback(messageId: string, data: { rating?: number; feedback_text?: string }) {
-  return apiFetch<{ ok: boolean }>(`/messages/${messageId}/feedback`, {
-    method: "PATCH",
-    body: JSON.stringify(data),
-  });
+  return apiFetch<{ ok: boolean; handoff: boolean; support_mode: string }>(
+    `/messages/${messageId}/feedback`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    },
+  );
+}
+
+export interface HandoffEvent {
+  support_mode: "bot" | "waiting" | "human";
+  announce?: boolean;
+  reason?: string | null;
+  notice?: string | null;
 }
 
 export interface StreamCallbacks {
@@ -233,6 +319,7 @@ export interface StreamCallbacks {
   onDone: () => void;
   onToolCall?: (toolCall: ToolCallEvent) => void;
   onToolResult?: (toolResult: ToolResultEvent) => void;
+  onHandoff?: (event: HandoffEvent) => void;
   onError?: (error: string) => void;
 }
 
@@ -311,6 +398,18 @@ export async function sendMessageSSE(
       } catch {
         // Ignore malformed tool events; the final message still renders.
       }
+      return;
+    }
+    if (eventName === "handoff") {
+      try {
+        callbacks.onHandoff?.(JSON.parse(data) as HandoffEvent);
+      } catch {
+        // Ignore malformed handoff events; polling will update the status.
+      }
+      return;
+    }
+    if (eventName && eventName !== "token") {
+      // Unknown event type: keep it out of the token stream.
       return;
     }
     if (data) {
@@ -417,7 +516,7 @@ export function createUser(data: {
   username: string;
   email: string;
   password: string;
-  role: "admin" | "user";
+  role: "admin" | "staff" | "user";
   is_active?: boolean;
 }) {
   return apiFetch<User>("/users", {
@@ -445,4 +544,66 @@ export function resetUserPassword(userId: string, data: { new_password: string }
     method: "POST",
     body: JSON.stringify(data),
   });
+}
+
+export type SupportScope = "waiting" | "mine" | "active" | "closed" | "all";
+
+export function listSupportConversations(scope: SupportScope, search?: string) {
+  const params = new URLSearchParams({ scope });
+  if (search?.trim()) params.set("search", search.trim());
+  return apiFetch<SupportConversation[]>(
+    `/support/conversations?${params.toString()}`,
+  );
+}
+
+export function getSupportConversation(id: string) {
+  return apiFetch<SupportConversationDetail>(`/support/conversations/${id}`);
+}
+
+export function claimSupportConversation(id: string) {
+  return apiFetch<SupportAction>(`/support/conversations/${id}/claim`, {
+    method: "POST",
+  });
+}
+
+export function assignSupportConversation(id: string, staffId: string | null) {
+  return apiFetch<SupportAction>(`/support/conversations/${id}/assign`, {
+    method: "POST",
+    body: JSON.stringify({ staff_id: staffId }),
+  });
+}
+
+export function sendSupportMessage(
+  id: string,
+  data: { content: string; is_internal: boolean },
+) {
+  return apiFetch<SupportMessageResult>(
+    `/support/conversations/${id}/messages`,
+    {
+      method: "POST",
+      body: JSON.stringify(data),
+    },
+  );
+}
+
+export function refreshSupportSummary(id: string) {
+  return apiFetch<SupportConversation>(
+    `/support/conversations/${id}/summary`,
+    { method: "POST" },
+  );
+}
+
+export function returnSupportToBot(id: string) {
+  return apiFetch<SupportAction>(
+    `/support/conversations/${id}/return-to-bot`,
+    { method: "POST" },
+  );
+}
+
+export function getSupportStats() {
+  return apiFetch<SupportStats>("/support/stats");
+}
+
+export function listSupportStaff() {
+  return apiFetch<SupportStaffOption[]>("/support/staff");
 }

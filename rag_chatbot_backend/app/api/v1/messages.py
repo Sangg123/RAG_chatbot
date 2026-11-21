@@ -24,6 +24,12 @@ from app.schemas.message import (
     MessageToolCallResponse,
 )
 from app.services.chat_service import stream_rag_answer
+from app.services.escalation_service import detect_negative_feedback
+from app.services.handoff_service import (
+    SUPPORT_MODE_BOT,
+    can_view_conversation,
+    trigger_handoff,
+)
 
 
 router = APIRouter(tags=["messages"])
@@ -70,7 +76,7 @@ async def get_message_citations(
     conversation = await db.scalar(select(Conversation).where(Conversation.id == message.conversation_id))
     if not conversation:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
-    if current_user.role != "admin" and conversation.user_id != current_user.id:
+    if not can_view_conversation(current_user, conversation):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     result = await db.execute(
@@ -108,7 +114,7 @@ async def get_message_tool_calls(
     conversation = await db.scalar(select(Conversation).where(Conversation.id == message.conversation_id))
     if not conversation:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
-    if current_user.role != "admin" and conversation.user_id != current_user.id:
+    if not can_view_conversation(current_user, conversation):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     result = await db.execute(
@@ -132,10 +138,31 @@ async def update_message_feedback(
     conversation = await db.scalar(select(Conversation).where(Conversation.id == message.conversation_id))
     if not conversation:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
-    if current_user.role != "admin" and conversation.user_id != current_user.id:
+    if not can_view_conversation(current_user, conversation):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     message.rating = payload.rating
     message.feedback_text = payload.feedback_text
-    await db.commit()
-    return {"ok": True}
+
+    handoff = False
+    support_mode = conversation.support_mode
+    if conversation.support_mode == SUPPORT_MODE_BOT:
+        negative_feedback = detect_negative_feedback(payload.feedback_text)
+        rating_signal = payload.rating is not None and payload.rating <= 2
+        if rating_signal or negative_feedback is not None:
+            reason = (
+                f"Khách đánh giá {payload.rating}/5 sao"
+                if rating_signal
+                else (negative_feedback.reason if negative_feedback else "Khách phản hồi tiêu cực")
+            )
+            handoff = await trigger_handoff(db, conversation, reason)
+            if handoff:
+                support_mode = conversation.support_mode
+    if not handoff:
+        await db.commit()
+
+    return {
+        "ok": True,
+        "handoff": handoff,
+        "support_mode": support_mode,
+    }

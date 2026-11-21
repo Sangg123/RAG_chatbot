@@ -50,6 +50,10 @@ export function isAdmin() {
   return getCurrentUser()?.role === "admin";
 }
 
+export function isStaff() {
+  return getCurrentUser()?.role === "staff";
+}
+
 export async function login(username: string, password: string) {
   const payload = await apiLogin({ username, password });
   setSession(payload);

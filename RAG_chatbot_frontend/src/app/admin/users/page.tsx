@@ -13,12 +13,22 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 const roleBadgeClass: Record<string, string> = {
   admin: "border-amber-500/20 bg-amber-500/10 text-amber-700",
+  staff: "border-sky-500/20 bg-sky-500/10 text-sky-700",
   user: "border-emerald-500/20 bg-emerald-500/10 text-emerald-700",
 };
 
+type Role = "admin" | "staff" | "user";
+
+function parseRole(value: string | null, fallback: Role): Role {
+  if (value === "admin" || value === "staff" || value === "user") {
+    return value;
+  }
+  return fallback;
+}
+
 export default function UsersPage() {
   const [search, setSearch] = useState("");
-  const [roleFilter, setRoleFilter] = useState<"all" | "admin" | "user">("all");
+  const [roleFilter, setRoleFilter] = useState<"all" | Role>("all");
   const [users, setUsers] = useState<User[]>([]);
   const [error, setError] = useState("");
 
@@ -57,8 +67,8 @@ export default function UsersPage() {
     if (!email) return;
     const password = prompt("Password:");
     if (!password) return;
-    const role = (prompt("Role (admin/user):", "user") || "user") as "admin" | "user";
-    await createUser({ username, email, password, role: role === "admin" ? "admin" : "user" });
+    const role = parseRole(prompt("Role (admin/staff/user):", "user"), "user");
+    await createUser({ username, email, password, role });
     await loadUsers();
   };
 
@@ -67,8 +77,8 @@ export default function UsersPage() {
     if (!username) return;
     const email = prompt("Email:", user.email);
     if (!email) return;
-    const role = (prompt("Role (admin/user):", user.role) || user.role) as "admin" | "user";
-    await updateUser(user.id, { username, email, role: role === "admin" ? "admin" : "user" });
+    const role = parseRole(prompt("Role (admin/staff/user):", user.role), user.role);
+    await updateUser(user.id, { username, email, role });
     await loadUsers();
   };
 
@@ -114,7 +124,7 @@ export default function UsersPage() {
           />
         </div>
         <div className="flex gap-2">
-          {(["all", "admin", "user"] as const).map((r) => (
+          {(["all", "admin", "staff", "user"] as const).map((r) => (
             <Button
               key={r}
               variant="outline"

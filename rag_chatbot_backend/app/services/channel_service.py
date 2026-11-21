@@ -231,6 +231,8 @@ async def _answer_question(
     user: User,
 ) -> str:
     tokens: list[str] = []
+    handoff_notice: str | None = None
+    handoff_seen = False
     try:
         async for event in stream_rag_answer(
             db,
@@ -240,6 +242,13 @@ async def _answer_question(
         ):
             if event.event == "token":
                 tokens.append(str(event.data))
+            elif event.event == "handoff" and isinstance(event.data, dict):
+                handoff_seen = True
+                if event.data.get("announce"):
+                    handoff_notice = str(
+                        event.data.get("notice")
+                        or "Mình đã chuyển cuộc trò chuyện đến nhân viên hỗ trợ."
+                    )
     except Exception:  # noqa: BLE001 - lỗi AI không được làm sập webhook
         logger.exception(
             "Channel chat failed for conversation %s",
@@ -247,6 +256,12 @@ async def _answer_question(
         )
         await db.rollback()
         return _FALLBACK_ANSWER
+
+    if handoff_notice:
+        return handoff_notice
+    if handoff_seen:
+        # Nhân viên đang xử lý; không để bot chen vào trả lời.
+        return ""
 
     answer = "".join(tokens).strip()
     return answer or _FALLBACK_ANSWER

@@ -47,7 +47,13 @@ function LoginPageContent() {
         try {
             const user = await login(username.trim(), password);
             setLoading(false);
-            router.push(user.role === "admin" ? "/admin" : redirect);
+            router.push(
+                user.role === "admin"
+                    ? "/admin"
+                    : user.role === "staff"
+                      ? "/staff"
+                      : redirect,
+            );
         } catch (e) {
             setLoading(false);
             setError(

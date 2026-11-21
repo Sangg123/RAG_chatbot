@@ -12,10 +12,21 @@ class MessageCreate(BaseModel):
     knowledge_base_id: UUID | None = None
 
 
+class MessageSender(BaseModel):
+    id: UUID
+    username: str
+    role: str
+
+    model_config = {"from_attributes": True}
+
+
 class MessageResponse(BaseModel):
     id: UUID
     conversation_id: UUID
     sender_type: str
+    sender_id: UUID | None = None
+    sender: MessageSender | None = None
+    is_internal: bool = False
     content: str
     rating: int | None = None
     feedback_text: str | None = None

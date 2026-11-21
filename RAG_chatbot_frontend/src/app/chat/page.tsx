@@ -21,11 +21,13 @@ import {
     Sparkles,
     ShieldCheck,
     Wrench,
+    Headset,
 } from "lucide-react";
 import {
     listConversations,
     createConversation,
     deleteConversation,
+    getConversation,
     listMessages,
     getCitations,
     getToolCalls,
@@ -37,6 +39,7 @@ import {
     type ToolCall as ApiToolCall,
     type ToolCallEvent,
     type ToolResultEvent,
+    type HandoffEvent,
 } from "@/lib/api";
 import { formatRelativeTime, cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -56,11 +59,36 @@ import { logout } from "@/lib/auth";
 import { refreshAccessToken, syncCurrentUser } from "@/lib/auth";
 import { useAuth } from "@/lib/use-auth";
 
+type ChatSender = "user" | "bot" | "staff" | "system";
+
 type Message = Omit<ApiMessage, "sender_type"> & {
-    sender_type: "user" | "bot";
+    sender_type: ChatSender;
     citations?: ApiCitation[];
     toolCalls?: ApiToolCall[];
 };
+
+type SupportMode = "bot" | "waiting" | "human";
+
+function normalizeSenderType(senderType: string): ChatSender {
+    const normalized = senderType.toLowerCase();
+    if (
+        normalized === "user" ||
+        normalized === "staff" ||
+        normalized === "system"
+    ) {
+        return normalized;
+    }
+    return "bot";
+}
+
+function toChatMessage(message: ApiMessage, previous?: Message): Message {
+    return {
+        ...message,
+        sender_type: normalizeSenderType(message.sender_type),
+        citations: previous?.citations ?? [],
+        toolCalls: previous?.toolCalls ?? [],
+    };
+}
 
 function toolCallLabel(toolCall: ApiToolCall) {
     const args = toolCall.arguments ?? {};
@@ -132,15 +160,31 @@ export default function ChatPage() {
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState("");
     const [isTyping, setIsTyping] = useState(false);
+    const [supportMode, setSupportMode] = useState<SupportMode>("bot");
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [citationOpen, setCitationOpen] = useState<string | null>(null);
     const [toolCallOpen, setToolCallOpen] = useState<string | null>(null);
     const [ratings, setRatings] = useState<Record<string, number>>({});
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const isTypingRef = useRef(false);
+    const supportModeRef = useRef<SupportMode>("bot");
     const router = useRouter();
-    const { user: authUser, authenticated, admin: userIsAdmin } = useAuth();
+    const {
+        user: authUser,
+        authenticated,
+        admin: userIsAdmin,
+        staff: userIsStaff,
+    } = useAuth();
     const username = authUser?.username ?? null;
     const [authReady, setAuthReady] = useState(false);
+
+    useEffect(() => {
+        isTypingRef.current = isTyping;
+    }, [isTyping]);
+
+    useEffect(() => {
+        supportModeRef.current = supportMode;
+    }, [supportMode]);
 
     useEffect(() => {
         const timer = window.setTimeout(() => setAuthReady(true), 0);
@@ -215,6 +259,7 @@ export default function ChatPage() {
 
     useEffect(() => {
         if (!activeConvId) return;
+        let cancelled = false;
         listMessages(activeConvId).then(async (msgs) => {
             const messagesWithSources = await Promise.all(
                 msgs.map(async (m) => {
@@ -228,26 +273,79 @@ export default function ChatPage() {
                             ),
                         ]);
                         return {
-                            ...m,
-                            sender_type: m.sender_type.toLowerCase() as
-                                | "user"
-                                | "bot",
+                            ...toChatMessage(m),
                             citations,
                             toolCalls,
                         };
                     }
-                    return {
-                        ...m,
-                        sender_type: m.sender_type.toLowerCase() as
-                            | "user"
-                            | "bot",
-                        citations: [] as ApiCitation[],
-                        toolCalls: [] as ApiToolCall[],
-                    };
+                    return toChatMessage(m);
                 }),
             );
-            setMessages(messagesWithSources);
+            if (!cancelled) {
+                setMessages(messagesWithSources);
+            }
         });
+        return () => {
+            cancelled = true;
+        };
+    }, [activeConvId]);
+
+    useEffect(() => {
+        if (!activeConvId) return;
+        let cancelled = false;
+
+        getConversation(activeConvId)
+            .then((conversation) => {
+                if (cancelled) return;
+                const mode = conversation.support_mode as SupportMode;
+                supportModeRef.current = mode;
+                setSupportMode(mode);
+            })
+            .catch(() => {
+                // Keep the current mode; polling will retry.
+            });
+
+        const tick = async () => {
+            try {
+                const conversation = await getConversation(activeConvId);
+                if (cancelled) return;
+                const previousMode = supportModeRef.current;
+                const mode = conversation.support_mode as SupportMode;
+                if (mode !== previousMode) {
+                    supportModeRef.current = mode;
+                    setSupportMode(mode);
+                }
+
+                // Khi nhân viên đang hỗ trợ, đồng bộ tin nhắn mới. Lần đầu
+                // chuyển về AI cũng tải một lần để hiện thông báo kết thúc.
+                if (
+                    (mode !== "bot" || previousMode !== "bot") &&
+                    !isTypingRef.current
+                ) {
+                    const serverMessages = await listMessages(activeConvId);
+                    if (cancelled) return;
+                    setMessages((prev) => {
+                        const previousById = new Map(
+                            prev.map((message) => [message.id, message]),
+                        );
+                        return serverMessages.map((message) =>
+                            toChatMessage(
+                                message,
+                                previousById.get(message.id),
+                            ),
+                        );
+                    });
+                }
+            } catch {
+                // Polling is best-effort; the chat remains usable.
+            }
+        };
+
+        const interval = window.setInterval(tick, 5000);
+        return () => {
+            cancelled = true;
+            window.clearInterval(interval);
+        };
     }, [activeConvId]);
 
     useEffect(() => {
@@ -261,6 +359,9 @@ export default function ChatPage() {
                 id: `temp-${Date.now()}`,
                 conversation_id: activeConvId,
                 sender_type: "user",
+                sender_id: null,
+                sender: null,
+                is_internal: false,
                 content: text,
                 rating: null,
                 feedback_text: null,
@@ -275,6 +376,9 @@ export default function ChatPage() {
                 id: botMsgId,
                 conversation_id: activeConvId,
                 sender_type: "bot",
+                sender_id: null,
+                sender: null,
+                is_internal: false,
                 content: "",
                 rating: null,
                 feedback_text: null,
@@ -355,6 +459,16 @@ export default function ChatPage() {
                                 }),
                             );
                         },
+                        onHandoff: (event: HandoffEvent) => {
+                            setIsTyping(false);
+                            isTypingRef.current = false;
+                            supportModeRef.current = event.support_mode;
+                            setSupportMode(event.support_mode);
+                            setMessages((prev) =>
+                                prev.filter((m) => m.id !== botMsgId),
+                            );
+                            listConversations().then(setConversations);
+                        },
                         onDone: async () => {
                             setIsTyping(false);
                             const msgs = await listMessages(activeConvId);
@@ -371,28 +485,27 @@ export default function ChatPage() {
                                                 ),
                                             ]);
                                         return {
-                                            ...m,
-                                            sender_type:
-                                                m.sender_type.toLowerCase() as
-                                                    | "user"
-                                                    | "bot",
+                                            ...toChatMessage(m),
                                             citations,
                                             toolCalls,
                                         };
                                     }
-                                    return {
-                                        ...m,
-                                        sender_type:
-                                            m.sender_type.toLowerCase() as
-                                                | "user"
-                                                | "bot",
-                                        citations: [] as ApiCitation[],
-                                        toolCalls: [] as ApiToolCall[],
-                                    };
+                                    return toChatMessage(m);
                                 }),
                             );
                             setMessages(messagesWithSources);
-                            listConversations().then(setConversations);
+                            listConversations().then((convs) => {
+                                setConversations(convs);
+                                const active = convs.find(
+                                    (conv) => conv.id === activeConvId,
+                                );
+                                if (active) {
+                                    const mode =
+                                        active.support_mode as SupportMode;
+                                    supportModeRef.current = mode;
+                                    setSupportMode(mode);
+                                }
+                            });
                         },
                         onError: (error) => {
                             setIsTyping(false);
@@ -462,7 +575,16 @@ export default function ChatPage() {
 
     const handleRating = useCallback(async (msgId: string, rating: number) => {
         setRatings((prev) => ({ ...prev, [msgId]: rating }));
-        await submitFeedback(msgId, { rating });
+        try {
+            const result = await submitFeedback(msgId, { rating });
+            if (result.handoff) {
+                supportModeRef.current = "waiting";
+                setSupportMode("waiting");
+                listConversations().then(setConversations);
+            }
+        } catch {
+            // Rating is best-effort; the chat itself is unaffected.
+        }
     }, []);
 
     const sidebarContent = (
@@ -559,6 +681,16 @@ export default function ChatPage() {
                         <Settings data-icon="inline-start" /> Trang quản trị
                     </Button>
                 )}
+                {userIsStaff && (
+                    <Button
+                        variant="ghost"
+                        className="justify-start"
+                        nativeButton={false}
+                        render={<Link href="/staff" />}
+                    >
+                        <Headset data-icon="inline-start" /> Bàn hỗ trợ
+                    </Button>
+                )}
                 <div className="flex items-center justify-between px-2 py-2 w-full rounded-md hover:bg-muted transition-colors">
                     <div className="flex items-center gap-2">
                         <Avatar className="size-8">
@@ -625,8 +757,19 @@ export default function ChatPage() {
                             {activeTitle}
                         </div>
                         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                            <span className="size-1.5 rounded-full bg-emerald-500" />
-                            Trực tuyến · RAG enabled
+                            <span
+                                className={cn(
+                                    "size-1.5 rounded-full",
+                                    supportMode === "waiting"
+                                        ? "bg-amber-500"
+                                        : "bg-emerald-500",
+                                )}
+                            />
+                            {supportMode === "waiting"
+                                ? "Đang kết nối nhân viên hỗ trợ..."
+                                : supportMode === "human"
+                                  ? "Nhân viên đang hỗ trợ bạn"
+                                  : "Trực tuyến · RAG enabled"}
                         </div>
                     </div>
                     <Badge
@@ -637,6 +780,45 @@ export default function ChatPage() {
                         Knowledge Base
                     </Badge>
                 </div>
+
+                {supportMode !== "bot" && (
+                    <div
+                        className={cn(
+                            "flex shrink-0 items-start gap-2.5 border-b px-4 py-2.5 sm:px-6",
+                            supportMode === "waiting"
+                                ? "border-amber-500/20 bg-amber-500/10"
+                                : "border-emerald-500/20 bg-emerald-500/10",
+                        )}
+                    >
+                        <Headset
+                            className={cn(
+                                "mt-0.5 size-4 shrink-0",
+                                supportMode === "waiting"
+                                    ? "text-amber-600"
+                                    : "text-emerald-600",
+                            )}
+                        />
+                        <div className="min-w-0">
+                            <div
+                                className={cn(
+                                    "text-sm font-semibold",
+                                    supportMode === "waiting"
+                                        ? "text-amber-800"
+                                        : "text-emerald-800",
+                                )}
+                            >
+                                {supportMode === "waiting"
+                                    ? "Đang chờ nhân viên hỗ trợ"
+                                    : "Nhân viên đang trực tiếp hỗ trợ bạn"}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                                {supportMode === "waiting"
+                                    ? "Yêu cầu của bạn đã được gửi đến đội ngũ hỗ trợ. Bạn cứ nhắn thêm thông tin nếu cần nhé."
+                                    : "Trợ lý AI đã tạm dừng. Tin nhắn của bạn sẽ được nhân viên phản hồi trực tiếp."}
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 <ScrollArea className="flex-1 min-h-0">
                     <div className="mx-auto flex max-w-3xl flex-col gap-5 px-4 py-6">
@@ -685,7 +867,25 @@ export default function ChatPage() {
                             </div>
                         </div>
 
-                        {activeMessages.map((msg) => (
+                        {activeMessages
+                            .filter(
+                                (msg) => msg.sender_type === "system",
+                            )
+                            .map((msg) => (
+                                <div
+                                    key={msg.id}
+                                    className="mx-auto flex max-w-xl items-center gap-1.5 rounded-full border border-border bg-muted px-3 py-1.5 text-center text-[11px] text-muted-foreground"
+                                >
+                                    <Bot className="size-3 shrink-0" />
+                                    {msg.content}
+                                </div>
+                            ))}
+
+                        {activeMessages
+                            .filter(
+                                (msg) => msg.sender_type !== "system",
+                            )
+                            .map((msg) => (
                             <div
                                 key={msg.id}
                                 className={cn(
@@ -699,6 +899,10 @@ export default function ChatPage() {
                                     {msg.sender_type === "bot" ? (
                                         <div className="flex size-8 items-center justify-center rounded-full bg-primary">
                                             <Bot className="size-3.5 text-primary-foreground" />
+                                        </div>
+                                    ) : msg.sender_type === "staff" ? (
+                                        <div className="flex size-8 items-center justify-center rounded-full bg-emerald-600 text-white">
+                                            <Headset className="size-3.5" />
                                         </div>
                                     ) : (
                                         <Avatar>
@@ -717,6 +921,12 @@ export default function ChatPage() {
                                             : "items-start",
                                     )}
                                 >
+                                    {msg.sender_type === "staff" && (
+                                        <span className="text-[10px] font-medium text-muted-foreground">
+                                            {msg.sender?.username ||
+                                                "Nhân viên hỗ trợ"}
+                                        </span>
+                                    )}
                                     {msg.sender_type === "bot" &&
                                     isTyping &&
                                     !msg.content ? (
@@ -731,7 +941,9 @@ export default function ChatPage() {
                                                 "px-4 py-2.5 text-sm leading-relaxed",
                                                 msg.sender_type === "user"
                                                     ? "rounded-2xl rounded-br-sm bg-primary text-primary-foreground"
-                                                    : "rounded-2xl rounded-tl-sm border border-border bg-card text-foreground shadow-sm",
+                                                    : msg.sender_type === "staff"
+                                                      ? "rounded-2xl rounded-tl-sm border border-emerald-500/25 bg-emerald-500/10 text-foreground"
+                                                      : "rounded-2xl rounded-tl-sm border border-border bg-card text-foreground shadow-sm",
                                             )}
                                             dangerouslySetInnerHTML={{
                                                 __html: formatContent(
@@ -938,6 +1150,9 @@ export default function ChatPage() {
                                                     size="icon-xs"
                                                     className="text-muted-foreground hover:text-primary"
                                                     aria-label="Hữu ích"
+                                                    onClick={() =>
+                                                        handleRating(msg.id, 5)
+                                                    }
                                                 >
                                                     <ThumbsUp />
                                                 </Button>
@@ -946,6 +1161,9 @@ export default function ChatPage() {
                                                     size="icon-xs"
                                                     className="text-muted-foreground hover:text-destructive"
                                                     aria-label="Không hữu ích"
+                                                    onClick={() =>
+                                                        handleRating(msg.id, 1)
+                                                    }
                                                 >
                                                     <ThumbsDown />
                                                 </Button>
@@ -958,7 +1176,7 @@ export default function ChatPage() {
                                         </div>
                                     )}
 
-                                    {msg.sender_type === "user" && (
+                                    {msg.sender_type !== "bot" && (
                                         <span className="text-xs text-muted-foreground/70">
                                             {formatRelativeTime(msg.created_at)}
                                         </span>
@@ -973,23 +1191,25 @@ export default function ChatPage() {
 
                 <div className="shrink-0 border-t border-border bg-background/80 px-4 py-4 backdrop-blur-xl">
                     <div className="mx-auto max-w-3xl">
-                        <div className="mb-2.5 flex gap-2 overflow-x-auto pb-1">
-                            {[
-                                "Chính sách đổi trả?",
-                                "Thời gian giao hàng?",
-                                "Hỗ trợ bảo hành?",
-                            ].map((s) => (
-                                <Badge
-                                    key={s}
-                                    variant="outline"
-                                    className="shrink-0 cursor-pointer bg-card transition-colors hover:border-primary/30 hover:bg-primary/5 hover:text-primary"
-                                    render={<button type="button" />}
-                                    onClick={() => sendMessage(s)}
-                                >
-                                    {s}
-                                </Badge>
-                            ))}
-                        </div>
+                        {supportMode === "bot" && (
+                            <div className="mb-2.5 flex gap-2 overflow-x-auto pb-1">
+                                {[
+                                    "Chính sách đổi trả?",
+                                    "Thời gian giao hàng?",
+                                    "Hỗ trợ bảo hành?",
+                                ].map((s) => (
+                                    <Badge
+                                        key={s}
+                                        variant="outline"
+                                        className="shrink-0 cursor-pointer bg-card transition-colors hover:border-primary/30 hover:bg-primary/5 hover:text-primary"
+                                        render={<button type="button" />}
+                                        onClick={() => sendMessage(s)}
+                                    >
+                                        {s}
+                                    </Badge>
+                                ))}
+                            </div>
+                        )}
 
                         <div className="rounded-2xl border border-border bg-card p-2 shadow-lg shadow-black/5">
                             <div className="flex items-end gap-2">
@@ -1004,7 +1224,13 @@ export default function ChatPage() {
                                     }}
                                     rows={1}
                                     className="max-h-[120px] min-h-[44px] resize-none overflow-y-auto border-0 bg-transparent shadow-none focus-visible:ring-0"
-                                    placeholder="Nhập câu hỏi của bạn..."
+                                    placeholder={
+                                        supportMode === "waiting"
+                                            ? "Nhắn thêm thông tin cho nhân viên..."
+                                            : supportMode === "human"
+                                              ? "Nhắn cho nhân viên hỗ trợ..."
+                                              : "Nhập câu hỏi của bạn..."
+                                    }
                                 />
                                 <Button
                                     onClick={handleSend}
@@ -1023,8 +1249,11 @@ export default function ChatPage() {
                         </div>
 
                         <p className="mt-2 text-center text-xs text-muted-foreground/70">
-                            Bot có thể mắc lỗi. Hãy kiểm tra thông tin quan
-                            trọng.
+                            {supportMode === "waiting"
+                                ? "Hội thoại đang chờ nhân viên nhận. Bạn không cần gửi lại yêu cầu."
+                                : supportMode === "human"
+                                  ? "Bạn đang trò chuyện trực tiếp với nhân viên hỗ trợ."
+                                  : "Bot có thể mắc lỗi. Hãy kiểm tra thông tin quan trọng."}
                         </p>
                     </div>
                 </div>
